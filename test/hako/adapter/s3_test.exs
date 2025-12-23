@@ -2,6 +2,8 @@ defmodule Hako.Adapter.S3Test do
   use ExUnit.Case
   import Hako.AdapterTest
 
+  @moduletag :s3
+
   setup do
     config = HakoTest.Minio.config()
     HakoTest.Minio.clean_bucket("default")

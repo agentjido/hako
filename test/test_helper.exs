@@ -1,9 +1,12 @@
 # Only start Minio if the binaries are available
 minio_available? =
   try do
-    {:ok, _} = HakoTest.Minio.start_link()
-    Process.sleep(1000)
-    HakoTest.Minio.initialize_bucket("default")
+    # Capture stdio to suppress minio's JSON output
+    ExUnit.CaptureIO.capture_io(fn ->
+      {:ok, _} = HakoTest.Minio.start_link()
+      :ok = HakoTest.Minio.wait_for_ready()
+      HakoTest.Minio.initialize_bucket("default")
+    end)
     true
   rescue
     RuntimeError -> false

@@ -10,6 +10,7 @@
 - **Lint**: `mix credo`
 - **Coverage**: `mix coveralls`
 - **Docs**: `mix docs`
+- **Download Minio**: `MIX_ENV=test mix minio_server.download --arch darwin-arm64 --version latest` (for ARM Macs)
 
 ## Architecture
 - **Core**: Filesystem abstraction library with adapter pattern

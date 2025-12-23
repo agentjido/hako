@@ -4,6 +4,15 @@ defmodule HakoTest.Minio do
   def start_link do
     cur = Process.flag(:trap_exit, true)
 
+    # Set environment variables for minio
+    System.put_env("MINIO_ROOT_USER", "minio_key")
+    System.put_env("MINIO_ROOT_PASSWORD", "minio_secret")
+    System.put_env("MINIO_BROWSER", "off")
+    
+    # Suppress minio JSON logs by setting quiet mode
+    original_level = Logger.level()
+    Logger.configure(level: :error)
+
     try do
       {:ok, _pid} = MinioServer.start_link(config())
     rescue
@@ -14,7 +23,7 @@ defmodule HakoTest.Minio do
                     Minio binaries not available.
 
                     Make sure to to run:
-                    $ MIX_ENV=test mix minio_server.download --arch … --version latest
+                    $ MIX_ENV=test mix minio_server.download --arch darwin-arm64 --version latest
                     """,
                     __STACKTRACE__
 
@@ -22,6 +31,7 @@ defmodule HakoTest.Minio do
             reraise exception, __STACKTRACE__
         end
     after
+      Logger.configure(level: original_level)
       Process.flag(:trap_exit, cur)
     end
   end
@@ -36,6 +46,26 @@ defmodule HakoTest.Minio do
       port: 9000,
       console_address: ":9001"
     ]
+  end
+
+  def wait_for_ready(timeout \\ 5000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    wait_for_ready_loop(deadline)
+  end
+
+  defp wait_for_ready_loop(deadline) do
+    case ExAws.S3.list_buckets() |> ExAws.request(config()) do
+      {:ok, _} ->
+        :ok
+
+      _ ->
+        if System.monotonic_time(:millisecond) < deadline do
+          Process.sleep(100)
+          wait_for_ready_loop(deadline)
+        else
+          {:error, :timeout}
+        end
+    end
   end
 
   def initialize_bucket(name) do

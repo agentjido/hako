@@ -165,7 +165,15 @@ defmodule Hako.Adapter.Git do
   end
 
   defp git(repo_path, args) do
-    System.cmd("git", args, cd: repo_path, stderr_to_stdout: true)
+    opts = [cd: repo_path, stderr_to_stdout: true]
+    
+    opts = if Mix.env() == :test do
+      Keyword.put(opts, :env, [{"GIT_TEMPLATE_DIR", ""}])
+    else
+      opts
+    end
+    
+    System.cmd("git", args, opts)
   end
 
   defp stage_and_commit(config, operation_info) do
