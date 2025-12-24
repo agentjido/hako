@@ -95,8 +95,7 @@ defmodule Hako.Adapter.ETS.Versioning do
       revision: version_id,
       author_name: "ETS Adapter",
       author_email: "ets@hako.local",
-      message:
-        "ETS version created at #{DateTime.from_unix!(timestamp) |> DateTime.to_iso8601()}",
+      message: "ETS version created at #{DateTime.from_unix!(timestamp) |> DateTime.to_iso8601()}",
       timestamp: DateTime.from_unix!(timestamp)
     }
   end

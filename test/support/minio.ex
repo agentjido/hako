@@ -8,7 +8,7 @@ defmodule HakoTest.Minio do
     System.put_env("MINIO_ROOT_USER", "minio_key")
     System.put_env("MINIO_ROOT_PASSWORD", "minio_secret")
     System.put_env("MINIO_BROWSER", "off")
-    
+
     # Suppress minio JSON logs by setting quiet mode
     original_level = Logger.level()
     Logger.configure(level: :error)

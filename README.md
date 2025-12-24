@@ -1,33 +1,118 @@
 # Hako
 
-![Elixir CI](https://github.com/agentjido/hako/workflows/Elixir%20CI/badge.svg)  
-[Hex Package](https://hex.pm/packages/hako) | 
-[Online Documentation](https://hexdocs.pm/hako).
+[![CI](https://github.com/agentjido/hako/actions/workflows/ci.yml/badge.svg)](https://github.com/agentjido/hako/actions/workflows/ci.yml)
+[![Hex.pm](https://img.shields.io/hexpm/v/hako.svg)](https://hex.pm/packages/hako)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/hako)
 
 <!-- MDOC !-->
 
-Hako is a filesystem abstraction for elixir providing a unified interface over many implementations. It allows you to swap out filesystems on the fly without needing to rewrite all of your application code in the process. It can eliminate vendor-lock in, reduce technical debt, and improve the testability of your code.
+Hako is a filesystem abstraction for Elixir providing a unified interface over many storage backends. It allows you to swap out filesystems on the fly without needing to rewrite your application code. Eliminate vendor lock-in, reduce technical debt, and improve testability.
 
-## Examples
+## Features
+
+- **Unified API** - Same operations work across all adapters
+- **Multiple Backends** - Local, S3, Git, GitHub, ETS, and InMemory storage
+- **Version Control** - Git, ETS, and InMemory adapters support versioning
+- **Streaming** - Efficient handling of large files
+- **Cross-Filesystem Operations** - Copy files between different storage backends
+- **Visibility Controls** - Public/private file permissions
+
+## Adapters
+
+| Adapter | Use Case | Features |
+|---------|----------|----------|
+| `Hako.Adapter.Local` | Local filesystem | Standard file operations, streaming |
+| `Hako.Adapter.S3` | AWS S3 / Minio | Cloud storage, streaming, presigned URLs |
+| `Hako.Adapter.Git` | Git repositories | Version control, commit history, rollback |
+| `Hako.Adapter.GitHub` | GitHub API | Remote repo access, commits via API |
+| `Hako.Adapter.ETS` | ETS tables | Fast in-memory with versioning |
+| `Hako.Adapter.InMemory` | Testing | Ephemeral storage with versioning |
+
+## Quick Start
 
 ```elixir
-defmodule LocalFileSystem do
+# Direct filesystem configuration
+filesystem = Hako.Adapter.Local.configure(prefix: "/home/user/storage")
+
+# Write and read files
+:ok = Hako.write(filesystem, "test.txt", "Hello World")
+{:ok, "Hello World"} = Hako.read(filesystem, "test.txt")
+
+# Module-based filesystem (recommended for reuse)
+defmodule MyStorage do
   use Hako.Filesystem,
     adapter: Hako.Adapter.Local,
-    prefix: prefix
+    prefix: "/home/user/storage"
 end
 
-LocalFileSystem.write("test.txt", "Hello World")
-{:ok, "Hello World"} = LocalFileSystem.read("test.txt")
+MyStorage.write("test.txt", "Hello World")
+{:ok, "Hello World"} = MyStorage.read("test.txt")
 ```
 
-### Git Adapter with Versioning
+## Local Adapter
+
+The Local adapter provides standard filesystem operations:
+
+```elixir
+filesystem = Hako.Adapter.Local.configure(prefix: "/path/to/storage")
+
+# Basic operations
+:ok = Hako.write(filesystem, "file.txt", "content")
+{:ok, content} = Hako.read(filesystem, "file.txt")
+:ok = Hako.delete(filesystem, "file.txt")
+
+# Copy and move
+:ok = Hako.copy(filesystem, "source.txt", "dest.txt")
+:ok = Hako.move(filesystem, "old.txt", "new.txt")
+
+# Directory operations
+:ok = Hako.create_directory(filesystem, "new-folder")
+{:ok, entries} = Hako.list_contents(filesystem, "folder/")
+:ok = Hako.delete_directory(filesystem, "old-folder")
+
+# File info
+{:ok, stat} = Hako.stat(filesystem, "file.txt")
+{:ok, :exists} = Hako.file_exists(filesystem, "file.txt")
+```
+
+## S3 Adapter
+
+The S3 adapter works with AWS S3, Minio, and S3-compatible storage:
+
+```elixir
+# Configure S3 filesystem
+filesystem = Hako.Adapter.S3.configure(
+  bucket: "my-bucket",
+  prefix: "uploads/",
+  region: "us-east-1"
+)
+
+# For Minio or custom S3-compatible storage
+filesystem = Hako.Adapter.S3.configure(
+  bucket: "my-bucket",
+  host: "localhost",
+  port: 9000,
+  scheme: "http://",
+  access_key_id: "minioadmin",
+  secret_access_key: "minioadmin"
+)
+
+# All standard operations work
+:ok = Hako.write(filesystem, "document.pdf", pdf_binary)
+{:ok, content} = Hako.read(filesystem, "document.pdf")
+
+# Streaming for large files
+{:ok, stream} = Hako.read_stream(filesystem, "large-file.bin", chunk_size: 65536)
+Enum.each(stream, fn chunk -> process(chunk) end)
+```
+
+## Git Adapter
 
 The Git adapter provides version-controlled filesystem operations:
 
 ```elixir
-# Configure Git filesystem with manual commits
-{_module, filesystem} = Hako.Adapter.Git.configure(
+# Manual commit mode - you control when commits happen
+filesystem = Hako.Adapter.Git.configure(
   path: "/path/to/repo",
   mode: :manual,
   author: [name: "Bot", email: "bot@example.com"]
@@ -35,7 +120,15 @@ The Git adapter provides version-controlled filesystem operations:
 
 # Write files and commit manually
 Hako.write(filesystem, "document.txt", "Version 1")
-Hako.commit(filesystem, "Add initial document")
+Hako.write(filesystem, "notes.txt", "Some notes")
+:ok = Hako.commit(filesystem, "Add initial documents")
+
+# Auto-commit mode - each write creates a commit
+filesystem = Hako.Adapter.Git.configure(
+  path: "/path/to/repo",
+  mode: :auto
+)
+Hako.write(filesystem, "file.txt", "content")  # Automatically committed
 
 # View revision history
 {:ok, revisions} = Hako.revisions(filesystem, "document.txt")
@@ -43,76 +136,119 @@ Hako.commit(filesystem, "Add initial document")
 # Read historical versions
 {:ok, old_content} = Hako.read_revision(filesystem, "document.txt", revision_sha)
 
-# Auto-commit mode
-{_module, auto_fs} = Hako.Adapter.Git.configure(path: "/repo", mode: :auto)
-Hako.write(auto_fs, "file.txt", "content")  # Automatically committed
+# Rollback to a previous revision
+:ok = Hako.rollback(filesystem, revision_sha)
 ```
 
-### GitHub Adapter
+## GitHub Adapter
 
 The GitHub adapter allows you to interact with GitHub repositories as a virtual filesystem:
 
 ```elixir
-# Configure GitHub filesystem for public repo (read-only)
-{_module, github_fs} = Hako.Adapter.GitHub.configure(
+# Read-only access to public repos
+filesystem = Hako.Adapter.GitHub.configure(
   owner: "octocat",
   repo: "Hello-World",
   ref: "main"
 )
 
-# Read files from GitHub
-{:ok, content} = Hako.read(github_fs, "README.md")
-{:ok, files} = Hako.list_contents(github_fs, "")
+{:ok, content} = Hako.read(filesystem, "README.md")
+{:ok, files} = Hako.list_contents(filesystem, "src/")
 
-# Configure with authentication for write operations
-{_module, auth_fs} = Hako.Adapter.GitHub.configure(
+# Authenticated access for write operations
+filesystem = Hako.Adapter.GitHub.configure(
   owner: "your-username",
   repo: "your-repo",
   ref: "main",
-  auth: %{access_token: "your_github_token"},
+  auth: %{access_token: "ghp_your_token"},
   commit_info: %{
     message: "Update via Hako",
-    committer: %{name: "Your Name", email: "your@email.com"},
-    author: %{name: "Your Name", email: "your@email.com"}
+    committer: %{name: "Your Name", email: "you@example.com"},
+    author: %{name: "Your Name", email: "you@example.com"}
   }
 )
 
 # Write files (creates commits)
-Hako.write(auth_fs, "new_file.txt", "Hello GitHub!", 
-            message: "Add new file via Hako")
+Hako.write(filesystem, "new_file.txt", "Hello GitHub!", 
+  message: "Add new file via Hako")
+```
 
-# Copy and move files
-Hako.copy(auth_fs, "source.txt", "dest.txt", 
-           message: "Copy file via Hako")
-Hako.move(auth_fs, "old_name.txt", "new_name.txt", 
-           message: "Rename file via Hako")
+## ETS and InMemory Adapters
 
-# Check file existence
-{:ok, :exists} = Hako.file_exists(auth_fs, "README.md")
-{:ok, :missing} = Hako.file_exists(auth_fs, "nonexistent.txt")
+These adapters are ideal for testing and caching:
+
+```elixir
+# ETS adapter - persists to ETS table
+filesystem = Hako.Adapter.ETS.configure(name: :my_cache)
+
+# InMemory adapter - ephemeral storage
+filesystem = Hako.Adapter.InMemory.configure(name: :test_fs)
+
+# Both support versioning
+Hako.write(filesystem, "file.txt", "v1")
+:ok = Hako.commit(filesystem, "Version 1")
+
+Hako.write(filesystem, "file.txt", "v2")
+:ok = Hako.commit(filesystem, "Version 2")
+
+{:ok, revisions} = Hako.revisions(filesystem, "file.txt")
+{:ok, "v1"} = Hako.read_revision(filesystem, "file.txt", first_revision_id)
+```
+
+## Cross-Filesystem Operations
+
+Copy files between different storage backends:
+
+```elixir
+local_fs = Hako.Adapter.Local.configure(prefix: "/local/storage")
+s3_fs = Hako.Adapter.S3.configure(bucket: "my-bucket")
+
+# Copy from local to S3
+:ok = Hako.copy_between_filesystem(
+  {local_fs, "document.pdf"},
+  {s3_fs, "uploads/document.pdf"}
+)
+
+# Copy from S3 to local
+:ok = Hako.copy_between_filesystem(
+  {s3_fs, "backup.zip"},
+  {local_fs, "downloads/backup.zip"}
+)
+```
+
+## Streaming
+
+Efficiently handle large files with streaming:
+
+```elixir
+# Read stream
+{:ok, stream} = Hako.read_stream(filesystem, "large-file.bin", chunk_size: 65536)
+Enum.each(stream, fn chunk -> process(chunk) end)
+
+# Write stream
+{:ok, stream} = Hako.write_stream(filesystem, "output.bin")
+data |> Stream.into(stream) |> Stream.run()
 ```
 
 ## Visibility
 
-Hako does by default only deal with a limited, but portable, set of visibility permissions:
+Control file permissions with visibility settings:
 
-- `:public`
-- `:private`
+```elixir
+# Write with visibility
+:ok = Hako.write(filesystem, "public-file.txt", "content", visibility: :public)
+:ok = Hako.write(filesystem, "private-file.txt", "secret", visibility: :private)
 
-For more details and how to apply custom visibility permissions take a look at `Hako.Visibility`
-
-## Options
-
-  The following write options apply to all adapters:
-
-  * `:visibility` - Set the visibility for files written
-  * `:directory_visibility` - Set the visibility for directories written (if applicable)
+# Get/set visibility
+{:ok, :public} = Hako.visibility(filesystem, "public-file.txt")
+:ok = Hako.set_visibility(filesystem, "file.txt", :private)
+```
 
 <!-- MDOC !-->
 
 ## Installation
 
-The package can be installed by adding `hako` to your list of dependencies in `mix.exs`:
+Add `hako` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -121,3 +257,11 @@ def deps do
   ]
 end
 ```
+
+## Documentation
+
+Full documentation is available at [HexDocs](https://hexdocs.pm/hako).
+
+## License
+
+Apache-2.0 - see [LICENSE.md](LICENSE.md) for details.

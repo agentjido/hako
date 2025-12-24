@@ -95,8 +95,7 @@ defmodule Hako.Adapter.InMemory.Versioning do
       revision: version_id,
       author_name: "InMemory Adapter",
       author_email: "inmemory@hako.local",
-      message:
-        "InMemory version created at #{DateTime.from_unix!(timestamp) |> DateTime.to_iso8601()}",
+      message: "InMemory version created at #{DateTime.from_unix!(timestamp) |> DateTime.to_iso8601()}",
       timestamp: DateTime.from_unix!(timestamp)
     }
   end

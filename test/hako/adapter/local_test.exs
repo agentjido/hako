@@ -76,9 +76,7 @@ defmodule Hako.Adapter.LocalTest do
         Hako.Adapter.Local.write(config, "public/file.txt", "Hello World", visibility: :public)
 
       :ok =
-        Hako.Adapter.Local.write(config, "private/file.txt", "Hello World",
-          directory_visibility: :private
-        )
+        Hako.Adapter.Local.write(config, "private/file.txt", "Hello World", directory_visibility: :private)
 
       assert %{mode: mode} = prefix |> File.stat!()
       assert match_mode(mode, 0o755)

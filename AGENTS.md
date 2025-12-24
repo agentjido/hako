@@ -14,10 +14,22 @@
 
 ## Architecture
 - **Core**: Filesystem abstraction library with adapter pattern
-- **Adapters**: `lib/hako/adapter/` - Local, InMemory, S3 adapters
+- **Adapters**: `lib/hako/adapter/` - Local, InMemory, ETS, S3, Git, GitHub adapters
 - **Main API**: `lib/hako.ex` - Unified filesystem operations (read, write, copy, move, delete)
+- **Versioning**: Git, ETS, and InMemory adapters support versioning (commit, revisions, rollback)
 - **Support**: Virtual filesystem, stat structs, visibility controls, relative path handling
 - **Test setup**: Minio server for S3 testing, tmp_dir fixtures, async tests
+
+## Adapters
+
+| Adapter | Description | Features |
+|---------|-------------|----------|
+| `Hako.Adapter.Local` | Local filesystem | Standard file operations |
+| `Hako.Adapter.InMemory` | In-memory storage | Testing, ephemeral data, versioning |
+| `Hako.Adapter.ETS` | ETS-backed storage | Persistence, versioning |
+| `Hako.Adapter.S3` | AWS S3 / Minio | Cloud storage, streaming |
+| `Hako.Adapter.Git` | Git repository | Version control, commit history |
+| `Hako.Adapter.GitHub` | GitHub API | Remote repo access, commits via API |
 
 ## Code Style
 - Use `mix format` for consistent formatting (configured in `.formatter.exs`)

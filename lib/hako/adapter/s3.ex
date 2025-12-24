@@ -463,9 +463,7 @@ defmodule Hako.Adapter.S3 do
               {:ok, :deleted}
 
             {:error, error} ->
-              throw(
-                {:delete_failed, key, %Errors.AdapterError{adapter: __MODULE__, reason: error}}
-              )
+              throw({:delete_failed, key, %Errors.AdapterError{adapter: __MODULE__, reason: error}})
           end
         end,
         max_concurrency: 10,

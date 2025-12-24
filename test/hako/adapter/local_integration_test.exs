@@ -459,9 +459,7 @@ defmodule Hako.Adapter.LocalIntegrationTest do
 
     test "append with directory creation", %{config: config} do
       assert :ok =
-               Hako.Adapter.Local.append(config, "nested/append.txt", "content",
-                 directory_visibility: :private
-               )
+               Hako.Adapter.Local.append(config, "nested/append.txt", "content", directory_visibility: :private)
 
       assert {:ok, "content"} = Hako.Adapter.Local.read(config, "nested/append.txt")
     end

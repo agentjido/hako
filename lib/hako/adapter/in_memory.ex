@@ -434,8 +434,7 @@ defmodule Hako.Adapter.InMemory do
           {:ok, {updated_files, dirs, versions}}
 
         _ ->
-          {{:error, Errors.FileNotFound.exception(file_path: "#{path}@#{version_id}")},
-           {files, dirs, versions}}
+          {{:error, Errors.FileNotFound.exception(file_path: "#{path}@#{version_id}")}, {files, dirs, versions}}
       end
     end)
   end
@@ -509,8 +508,7 @@ defmodule Hako.Adapter.InMemory do
         _ ->
           # File doesn't exist, create it with the contents
           file =
-            {IO.iodata_to_binary(contents),
-             %{visibility: visibility, mtime: System.system_time(:second)}}
+            {IO.iodata_to_binary(contents), %{visibility: visibility, mtime: System.system_time(:second)}}
 
           directory = {%{}, %{visibility: directory_visibility}}
           {:ok, put_in(state, accessor(path, directory), file)}

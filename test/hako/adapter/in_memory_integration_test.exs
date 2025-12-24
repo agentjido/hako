@@ -545,9 +545,7 @@ defmodule Hako.Adapter.InMemoryIntegrationTest do
 
     test "append with directory creation", %{config: config} do
       assert :ok =
-               Hako.Adapter.InMemory.append(config, "nested/append.txt", "content",
-                 directory_visibility: :private
-               )
+               Hako.Adapter.InMemory.append(config, "nested/append.txt", "content", directory_visibility: :private)
 
       assert {:ok, "content"} = Hako.Adapter.InMemory.read(config, "nested/append.txt")
     end

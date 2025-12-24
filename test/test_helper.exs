@@ -7,6 +7,7 @@ minio_available? =
       :ok = HakoTest.Minio.wait_for_ready()
       HakoTest.Minio.initialize_bucket("default")
     end)
+
     true
   rescue
     RuntimeError -> false

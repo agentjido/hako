@@ -79,11 +79,7 @@ defmodule Hako.Adapter.GitHubTest do
       content = "Hello, World!"
       encoded_content = Base.encode64(content)
 
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "README.md",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "README.md", "main" ->
         {200, %{"content" => encoded_content, "encoding" => "base64"}, %{}}
       end)
 
@@ -91,11 +87,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns error for missing file", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "missing.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "missing.txt", "main" ->
         {404, %{"message" => "Not Found"}, %{}}
       end)
 
@@ -103,11 +95,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns error for API errors", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "error.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "error.txt", "main" ->
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
@@ -115,11 +103,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "handles malformed base64 content", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "malformed.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "malformed.txt", "main" ->
         {200, %{"content" => "invalid-base64!", "encoding" => "base64"}, %{}}
       end)
 
@@ -149,20 +133,12 @@ defmodule Hako.Adapter.GitHubTest do
       content = "New file content"
 
       # File doesn't exist
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "new.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "new.txt", "main" ->
         {404, %{"message" => "Not Found"}, %{}}
       end)
 
       # Create file
-      expect(Tentacat.Contents, :create, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "new.txt",
-                                            params ->
+      expect(Tentacat.Contents, :create, fn _client, "octocat", "Hello-World", "new.txt", params ->
         assert params.message == "Test commit"
         assert params.content == Base.encode64(content)
         assert params.committer.name == "Test"
@@ -179,20 +155,12 @@ defmodule Hako.Adapter.GitHubTest do
       existing_sha = "existing_sha_123"
 
       # File exists
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "existing.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "existing.txt", "main" ->
         {200, %{"sha" => existing_sha}, %{}}
       end)
 
       # Update file
-      expect(Tentacat.Contents, :create, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "existing.txt",
-                                            params ->
+      expect(Tentacat.Contents, :create, fn _client, "octocat", "Hello-World", "existing.txt", params ->
         assert params.sha == existing_sha
         assert params.content == Base.encode64(content)
 
@@ -209,11 +177,7 @@ defmodule Hako.Adapter.GitHubTest do
         {404, %{}, %{}}
       end)
 
-      expect(Tentacat.Contents, :create, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "custom.txt",
-                                            params ->
+      expect(Tentacat.Contents, :create, fn _client, "octocat", "Hello-World", "custom.txt", params ->
         assert params.message == "Custom message"
         assert params.committer == %{name: "Custom", email: "custom@example.com"}
 
@@ -235,11 +199,7 @@ defmodule Hako.Adapter.GitHubTest do
         {404, %{}, %{}}
       end)
 
-      expect(Tentacat.Contents, :create, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "fail.txt",
-                                            _params ->
+      expect(Tentacat.Contents, :create, fn _client, "octocat", "Hello-World", "fail.txt", _params ->
         {422, %{"message" => "Validation Failed"}, %{}}
       end)
 
@@ -251,20 +211,12 @@ defmodule Hako.Adapter.GitHubTest do
       content = "Content for file with lookup issues"
 
       # File lookup fails (treated as file doesn't exist)
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "lookup_error.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "lookup_error.txt", "main" ->
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
       # Create file (since lookup failed, sha is nil)
-      expect(Tentacat.Contents, :create, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "lookup_error.txt",
-                                            params ->
+      expect(Tentacat.Contents, :create, fn _client, "octocat", "Hello-World", "lookup_error.txt", params ->
         # No sha means new file
         refute Map.has_key?(params, :sha)
         {201, %{"commit" => %{"sha" => "abc123"}}, %{}}
@@ -284,20 +236,12 @@ defmodule Hako.Adapter.GitHubTest do
       file_sha = "file_sha_123"
 
       # File exists
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "delete_me.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "delete_me.txt", "main" ->
         {200, %{"sha" => file_sha}, %{}}
       end)
 
       # Delete file
-      expect(Tentacat.Contents, :remove, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "delete_me.txt",
-                                            params ->
+      expect(Tentacat.Contents, :remove, fn _client, "octocat", "Hello-World", "delete_me.txt", params ->
         assert params.sha == file_sha
         assert params.message == "Delete delete_me.txt via Hako"
 
@@ -308,11 +252,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns error for missing file", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "missing.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "missing.txt", "main" ->
         {404, %{"message" => "Not Found"}, %{}}
       end)
 
@@ -323,20 +263,12 @@ defmodule Hako.Adapter.GitHubTest do
       file_sha = "file_sha_123"
 
       # File exists
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "error_delete.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "error_delete.txt", "main" ->
         {200, %{"sha" => file_sha}, %{}}
       end)
 
       # Delete fails
-      expect(Tentacat.Contents, :remove, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "error_delete.txt",
-                                            _params ->
+      expect(Tentacat.Contents, :remove, fn _client, "octocat", "Hello-World", "error_delete.txt", _params ->
         {422, %{"message" => "Validation Failed"}, %{}}
       end)
 
@@ -344,11 +276,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns error when file lookup for delete fails", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "lookup_error.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "lookup_error.txt", "main" ->
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
@@ -387,11 +315,7 @@ defmodule Hako.Adapter.GitHubTest do
     test "handles single file response", %{config: config} do
       file_content = %{"type" => "file", "name" => "single.txt", "size" => 256}
 
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "single.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "single.txt", "main" ->
         {200, file_content, %{}}
       end)
 
@@ -400,11 +324,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "normalizes path for subdirectories", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "src/lib",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "src/lib", "main" ->
         {200, [], %{}}
       end)
 
@@ -412,11 +332,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns error for missing directory", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "missing",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "missing", "main" ->
         {404, %{"message" => "Not Found"}, %{}}
       end)
 
@@ -424,11 +340,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns error for API failures", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "error_dir",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "error_dir", "main" ->
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
@@ -443,11 +355,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns true for existing file", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "exists.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "exists.txt", "main" ->
         {200, %{"type" => "file"}, %{}}
       end)
 
@@ -455,11 +363,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns false for directory", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "directory",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "directory", "main" ->
         {200, %{"type" => "dir"}, %{}}
       end)
 
@@ -467,11 +371,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns false for missing file", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "missing.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "missing.txt", "main" ->
         {404, %{}, %{}}
       end)
 
@@ -479,11 +379,7 @@ defmodule Hako.Adapter.GitHubTest do
     end
 
     test "returns error for API failures", %{config: config} do
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "error.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "error.txt", "main" ->
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
@@ -501,29 +397,17 @@ defmodule Hako.Adapter.GitHubTest do
       content = "File to copy"
 
       # Read source
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "source.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "source.txt", "main" ->
         {200, %{"content" => Base.encode64(content), "encoding" => "base64"}, %{}}
       end)
 
       # Check if destination exists (doesn't)
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "dest.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "dest.txt", "main" ->
         {404, %{}, %{}}
       end)
 
       # Write destination
-      expect(Tentacat.Contents, :create, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "dest.txt",
-                                            _params ->
+      expect(Tentacat.Contents, :create, fn _client, "octocat", "Hello-World", "dest.txt", _params ->
         {201, %{}, %{}}
       end)
 
@@ -542,47 +426,27 @@ defmodule Hako.Adapter.GitHubTest do
       source_sha = "source_sha_123"
 
       # Read source
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "source.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "source.txt", "main" ->
         {200, %{"content" => Base.encode64(content), "encoding" => "base64"}, %{}}
       end)
 
       # Check if destination exists (doesn't)
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "dest.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "dest.txt", "main" ->
         {404, %{}, %{}}
       end)
 
       # Write destination
-      expect(Tentacat.Contents, :create, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "dest.txt",
-                                            _params ->
+      expect(Tentacat.Contents, :create, fn _client, "octocat", "Hello-World", "dest.txt", _params ->
         {201, %{}, %{}}
       end)
 
       # Get source for deletion
-      expect(Tentacat.Contents, :find_in, fn _client,
-                                             "octocat",
-                                             "Hello-World",
-                                             "source.txt",
-                                             "main" ->
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "source.txt", "main" ->
         {200, %{"sha" => source_sha}, %{}}
       end)
 
       # Delete source
-      expect(Tentacat.Contents, :remove, fn _client,
-                                            "octocat",
-                                            "Hello-World",
-                                            "source.txt",
-                                            _params ->
+      expect(Tentacat.Contents, :remove, fn _client, "octocat", "Hello-World", "source.txt", _params ->
         {200, %{}, %{}}
       end)
 
