@@ -4,6 +4,7 @@ defmodule Hako.VersioningPolymorphismTest do
   @moduletag :tmp_dir
 
   describe "polymorphic versioning API" do
+    @tag :git
     test "Git adapter works with main Hako API", %{tmp_dir: tmp_dir} do
       git_dir = Path.join(tmp_dir, "git_repo")
       filesystem = Hako.Adapter.Git.configure(path: git_dir, mode: :manual)
@@ -81,6 +82,7 @@ defmodule Hako.VersioningPolymorphismTest do
       assert {:error, :unsupported} = Hako.rollback(filesystem, "rev")
     end
 
+    @tag :git
     test "all versioning adapters return consistent format" do
       # Git format (maintains backward compatibility)
       git_dir = System.tmp_dir!() |> Path.join("git_#{:rand.uniform(10000)}")

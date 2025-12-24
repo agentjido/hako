@@ -1,6 +1,8 @@
 defmodule Hako.Adapter.GitTest do
   use ExUnit.Case, async: false
 
+  @moduletag :git
+
   alias Hako.Adapter.Git
   alias Hako.Revision
 
