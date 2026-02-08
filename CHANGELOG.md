@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub adapter for remote repository access via GitHub API
 - ETS adapter with versioning support
 - InMemory adapter with versioning support
-- Polymorphic versioning interface in main Hako module
+- Polymorphic versioning interface in main Jido.VFS module
 - Comprehensive integration test suites for all adapters
 - GitHub Actions CI/CD workflows
 
@@ -35,25 +35,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.1] - 2021-09-12
 
 ### Changed
-- `Hako.RelativePath.join_prefix` does make sure trailing slashes are retained
+- `Jido.VFS.RelativePath.join_prefix` does make sure trailing slashes are retained
 
 ## [0.5.0] - 2020-08-16
 
 ### Added
-- New `Hako.Filesystem` callback `copy/4` to implement copy between filesystems
-- New `Hako.Filesystem` callback `file_exists/2`
-- New `Hako.Filesystem` callback `list_contents/2`
-- New `Hako.Filesystem` callback `create_directory/2`
-- New `Hako.Filesystem` callback `delete_directory/2`
-- New `Hako.Filesystem` callback `clear/1`
+- New `Jido.VFS.Filesystem` callback `copy/4` to implement copy between filesystems
+- New `Jido.VFS.Filesystem` callback `file_exists/2`
+- New `Jido.VFS.Filesystem` callback `list_contents/2`
+- New `Jido.VFS.Filesystem` callback `create_directory/2`
+- New `Jido.VFS.Filesystem` callback `delete_directory/2`
+- New `Jido.VFS.Filesystem` callback `clear/1`
 
 ## [0.4.0] - 2020-07-31
 
 ### Added
-- New `Hako.Filesystem` callback `copy/4` to implement copy between filesystems
+- New `Jido.VFS.Filesystem` callback `copy/4` to implement copy between filesystems
 
 ## [0.3.0] - 2020-07-29
 
 ### Added
-- New `Hako.Filesystem` callback `read_stream/2`
-- Added `:otp_app` key to `use Hako.Filesystem` macro to be able to store settings in config files
+- New `Jido.VFS.Filesystem` callback `read_stream/2`
+- Added `:otp_app` key to `use Jido.VFS.Filesystem` macro to be able to store settings in config files

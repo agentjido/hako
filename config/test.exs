@@ -4,4 +4,4 @@ import Config
 config :logger, level: :warning
 
 # Enable test mode for Git adapter (disables template dir to avoid hooks)
-config :hako, test_mode: true
+config :jido_vfs, test_mode: true
