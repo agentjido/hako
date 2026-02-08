@@ -1,9 +1,9 @@
-# Agent Guide for Hako
+# Agent Guide for Jido.VFS
 
 ## Commands
 - **Test all**: `mix test`
-- **Test single file**: `mix test test/hako_test.exs`  
-- **Test single test**: `mix test test/hako_test.exs:123` (line number)
+- **Test single file**: `mix test test/jido_vfs_test.exs`  
+- **Test single test**: `mix test test/jido_vfs_test.exs:123` (line number)
 - **Quality check**: `mix quality` (format, compile, dialyzer, credo)
 - **Format code**: `mix format`
 - **Type check**: `mix dialyzer`
@@ -14,8 +14,8 @@
 
 ## Architecture
 - **Core**: Filesystem abstraction library with adapter pattern
-- **Adapters**: `lib/hako/adapter/` - Local, InMemory, ETS, S3, Git, GitHub adapters
-- **Main API**: `lib/hako.ex` - Unified filesystem operations (read, write, copy, move, delete)
+- **Adapters**: `lib/jido_vfs/adapter/` - Local, InMemory, ETS, S3, Git, GitHub adapters
+- **Main API**: `lib/jido_vfs.ex` - Unified filesystem operations (read, write, copy, move, delete)
 - **Versioning**: Git, ETS, and InMemory adapters support versioning (commit, revisions, rollback)
 - **Support**: Virtual filesystem, stat structs, visibility controls, relative path handling
 - **Test setup**: Minio server for S3 testing, tmp_dir fixtures, async tests
@@ -24,12 +24,12 @@
 
 | Adapter | Description | Features |
 |---------|-------------|----------|
-| `Hako.Adapter.Local` | Local filesystem | Standard file operations |
-| `Hako.Adapter.InMemory` | In-memory storage | Testing, ephemeral data, versioning |
-| `Hako.Adapter.ETS` | ETS-backed storage | Persistence, versioning |
-| `Hako.Adapter.S3` | AWS S3 / Minio | Cloud storage, streaming |
-| `Hako.Adapter.Git` | Git repository | Version control, commit history |
-| `Hako.Adapter.GitHub` | GitHub API | Remote repo access, commits via API |
+| `Jido.VFS.Adapter.Local` | Local filesystem | Standard file operations |
+| `Jido.VFS.Adapter.InMemory` | In-memory storage | Testing, ephemeral data, versioning |
+| `Jido.VFS.Adapter.ETS` | ETS-backed storage | Persistence, versioning |
+| `Jido.VFS.Adapter.S3` | AWS S3 / Minio | Cloud storage, streaming |
+| `Jido.VFS.Adapter.Git` | Git repository | Version control, commit history |
+| `Jido.VFS.Adapter.GitHub` | GitHub API | Remote repo access, commits via API |
 
 ## Code Style
 - Use `mix format` for consistent formatting (configured in `.formatter.exs`)

@@ -1,20 +1,20 @@
-# Contributing to Hako
+# Contributing to Jido.VFS
 
-Welcome to the Hako contributor's guide! We're excited that you're interested in contributing to Hako, a filesystem abstraction library for Elixir.
+Welcome to the Jido.VFS contributor's guide! We're excited that you're interested in contributing to Jido.VFS, a filesystem abstraction library for Elixir.
 
 ## Getting Started
 
 ### Development Environment
 
 1. **Elixir Version Requirements**
-   - Hako requires Elixir ~> 1.11
+   - Jido.VFS requires Elixir ~> 1.11
    - We recommend using asdf or similar version manager
 
 2. **Initial Setup**
    ```bash
    # Clone the repository
-   git clone https://github.com/agentjido/hako.git
-   cd hako
+   git clone https://github.com/agentjido/jido_vfs.git
+   cd jido_vfs
 
    # Install dependencies
    mix deps.get
@@ -47,7 +47,7 @@ Welcome to the Hako contributor's guide! We're excited that you're interested in
 ```
 .
 ├── lib/
-│   ├── hako/
+│   ├── jido_vfs/
 │   │   ├── adapter/       # Filesystem adapters
 │   │   │   ├── local.ex   # Local filesystem
 │   │   │   ├── in_memory.ex # In-memory storage
@@ -59,9 +59,9 @@ Welcome to the Hako contributor's guide! We're excited that you're interested in
 │   │   ├── filesystem.ex  # Filesystem behaviour
 │   │   ├── stat/          # File stat structures
 │   │   └── visibility.ex  # Visibility handling
-│   └── hako.ex           # Main entry point
+│   └── jido_vfs.ex           # Main entry point
 ├── test/
-│   ├── hako/
+│   ├── jido_vfs/
 │   │   └── adapter/      # Adapter tests
 │   ├── support/          # Test helpers
 │   └── test_helper.exs
@@ -92,7 +92,7 @@ Welcome to the Hako contributor's guide! We're excited that you're interested in
 
 3. **Type Specifications**
    ```elixir
-   @type filesystem :: {module(), Hako.Adapter.config()}
+   @type filesystem :: {module(), Jido.VFS.Adapter.config()}
 
    @spec read(filesystem, Path.t(), keyword()) :: {:ok, binary} | {:error, term}
    def read({adapter, config}, path, opts \\ []) do
@@ -104,7 +104,7 @@ Welcome to the Hako contributor's guide! We're excited that you're interested in
 
 1. **Test Organization**
    ```elixir
-   defmodule Hako.Adapter.LocalTest do
+   defmodule Jido.VFS.Adapter.LocalTest do
      use ExUnit.Case, async: true
 
      describe "read/2" do
@@ -133,7 +133,7 @@ Welcome to the Hako contributor's guide! We're excited that you're interested in
    mix coveralls
 
    # Run specific test file
-   mix test test/hako/adapter/local_test.exs
+   mix test test/jido_vfs/adapter/local_test.exs
 
    # Include S3 tests (requires Minio)
    mix test --include s3
@@ -147,8 +147,8 @@ Welcome to the Hako contributor's guide! We're excited that you're interested in
 1. **Use With Patterns**
    ```elixir
    def copy(filesystem, source, destination, opts) do
-     with {:ok, normalized_source} <- Hako.RelativePath.normalize(source),
-          {:ok, normalized_dest} <- Hako.RelativePath.normalize(destination) do
+     with {:ok, normalized_source} <- Jido.VFS.RelativePath.normalize(source),
+          {:ok, normalized_dest} <- Jido.VFS.RelativePath.normalize(destination) do
        adapter.copy(config, normalized_source, normalized_dest, opts)
      end
    end
@@ -231,8 +231,8 @@ Releases are handled automatically by maintainers. Contributors should:
 
 ## Additional Resources
 
-- [Hex Documentation](https://hexdocs.pm/hako)
-- [GitHub Issues](https://github.com/agentjido/hako/issues)
+- [Hex Documentation](https://hexdocs.pm/jido_vfs)
+- [GitHub Issues](https://github.com/agentjido/jido_vfs/issues)
 - [AgentJido Discord](https://agentjido.xyz/discord)
 
 ## Questions or Problems?
@@ -242,4 +242,4 @@ If you have questions about contributing:
 - Join our Discord community
 - Check existing issues and documentation
 
-Thank you for contributing to Hako!
+Thank you for contributing to Jido.VFS!

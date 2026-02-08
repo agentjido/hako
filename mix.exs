@@ -1,13 +1,13 @@
-defmodule Hako.MixProject do
+defmodule Jido.VFS.MixProject do
   use Mix.Project
 
   @version "1.0.0"
-  @source_url "https://github.com/agentjido/hako"
+  @source_url "https://github.com/agentjido/jido_vfs"
   @description "A filesystem abstraction for Elixir with adapters for Local, S3, Git, GitHub, ETS, and InMemory storage."
 
   def project do
     [
-      app: :hako,
+      app: :jido_vfs,
       version: @version,
       elixir: "~> 1.11",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -16,7 +16,7 @@ defmodule Hako.MixProject do
       aliases: aliases(),
 
       # Documentation
-      name: "Hako",
+      name: "Jido.VFS",
       description: @description,
       source_url: @source_url,
       homepage_url: @source_url,
@@ -50,7 +50,7 @@ defmodule Hako.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Hako.Application, []}
+      mod: {Jido.VFS.Application, []}
     ]
   end
 
@@ -104,9 +104,9 @@ defmodule Hako.MixProject do
       maintainers: ["AgentJido"],
       licenses: ["Apache-2.0"],
       links: %{
-        "Changelog" => "https://hexdocs.pm/hako/changelog.html",
+        "Changelog" => "https://hexdocs.pm/jido_vfs/changelog.html",
         "Discord" => "https://agentjido.xyz/discord",
-        "Documentation" => "https://hexdocs.pm/hako",
+        "Documentation" => "https://hexdocs.pm/jido_vfs",
         "GitHub" => @source_url,
         "Website" => "https://agentjido.xyz"
       }
@@ -124,13 +124,13 @@ defmodule Hako.MixProject do
       ],
       groups_for_modules: [
         Adapters: [
-          ~r/^Hako\.Adapter\./
+          ~r/^Jido\.VFS\.Adapter\./
         ],
         Stat: [
-          ~r/^Hako\.Stat\./
+          ~r/^Jido\.VFS\.Stat\./
         ],
         Errors: [
-          ~r/^Hako\.Errors/
+          ~r/^Jido\.VFS\.Errors/
         ]
       ]
     ]
