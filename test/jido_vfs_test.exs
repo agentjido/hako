@@ -422,7 +422,7 @@ defmodule JidoVFSTest do
         prefix: "ziKK7t5LzV5XiJjYh30KxCLorRXqLwwEnZYJ"
       ]
 
-      Application.put_env(:hako_test, JidoVFSTest.AdhocFilesystem, configuration)
+      Application.put_env(:jido_vfs_test, JidoVFSTest.AdhocFilesystem, configuration)
 
       defmodule AdhocFilesystem do
         use Jido.VFS.Filesystem, otp_app: :jido_vfs_test
