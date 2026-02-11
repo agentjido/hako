@@ -248,6 +248,16 @@ Control file permissions with visibility settings:
 
 ## Installation
 
+### Igniter Installation
+If your project has [Igniter](https://hexdocs.pm/igniter/readme.html) available, 
+you can install Jido VFS using the command 
+
+```bash
+mix igniter.install jido_vfs
+```
+
+### Manual Installation
+
 Add `jido_vfs` to your list of dependencies in `mix.exs`:
 
 ```elixir
