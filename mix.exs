@@ -32,7 +32,8 @@ defmodule Jido.VFS.MixProject do
       # Dialyzer
       dialyzer: [
         plt_local_path: "priv/plts/project.plt",
-        plt_core_path: "priv/plts/core.plt"
+        plt_core_path: "priv/plts/core.plt",
+        ignore_warnings: ".dialyzer_ignore.exs"
       ]
     ]
   end
@@ -79,7 +80,10 @@ defmodule Jido.VFS.MixProject do
       {:mimic, "~> 2.0", only: :test},
       {:minio_server, "~> 0.4.0", only: [:dev, :test]},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
-      {:stream_data, "~> 1.0", only: [:dev, :test]}
+      {:stream_data, "~> 1.0", only: [:dev, :test]},
+
+      # Code generation
+      {:igniter, "~> 0.7", optional: true}
     ]
   end
 
