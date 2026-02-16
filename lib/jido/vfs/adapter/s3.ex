@@ -113,30 +113,73 @@ defmodule Jido.VFS.Adapter.S3 do
   end
 
   @behaviour Jido.VFS.Adapter
-  @visibility_key :s3_adapter_visibility_store
+  @visibility_table :jido_vfs_s3_visibility_store
 
-  defp store_visibility(path, visibility) do
-    current = :persistent_term.get(@visibility_key, %{})
-    :persistent_term.put(@visibility_key, Map.put(current, path, visibility))
+  defp ensure_visibility_table do
+    case :ets.whereis(@visibility_table) do
+      :undefined ->
+        try do
+          :ets.new(@visibility_table, [
+            :named_table,
+            :public,
+            :set,
+            {:read_concurrency, true},
+            {:write_concurrency, true}
+          ])
+        rescue
+          ArgumentError ->
+            :ok
+        end
+
+      _ ->
+        :ok
+    end
+
+    @visibility_table
   end
 
-  defp get_stored_visibility(path) do
-    visibility_store = :persistent_term.get(@visibility_key, %{})
+  defp visibility_key(%Config{} = config, path) do
+    {config.bucket, config.prefix, path}
+  end
 
-    cond do
-      Map.has_key?(visibility_store, path) ->
-        Map.get(visibility_store, path)
+  defp store_visibility(%Config{} = config, path, visibility) do
+    table = ensure_visibility_table()
+    :ets.insert(table, {visibility_key(config, path), visibility})
+  end
 
-      !String.ends_with?(path, "/") && Map.has_key?(visibility_store, Path.dirname(path) <> "/") ->
-        Map.get(visibility_store, Path.dirname(path) <> "/")
+  defp get_stored_visibility(%Config{} = config, path) do
+    table = ensure_visibility_table()
+    key = visibility_key(config, path)
 
-      true ->
-        :public
+    case :ets.lookup(table, key) do
+      [{^key, visibility}] ->
+        visibility
+
+      [] ->
+        case parent_directory_path(path) do
+          nil ->
+            :public
+
+          parent_path ->
+            parent_key = visibility_key(config, parent_path)
+
+            case :ets.lookup(table, parent_key) do
+              [{^parent_key, visibility}] -> visibility
+              [] -> :public
+            end
+        end
     end
   end
 
   def reset_visibility_store do
-    :persistent_term.put(@visibility_key, %{})
+    case :ets.whereis(@visibility_table) do
+      :undefined ->
+        :ok
+
+      table ->
+        :ets.delete_all_objects(table)
+        :ok
+    end
   end
 
   @impl Jido.VFS.Adapter
@@ -158,12 +201,13 @@ defmodule Jido.VFS.Adapter.S3 do
     path = clean_path(Jido.VFS.RelativePath.join_prefix(config.prefix, path))
 
     if visibility = Keyword.get(opts, :visibility) do
-      store_visibility(path, visibility)
+      store_visibility(config, path, visibility)
     end
 
     if dir_visibility = Keyword.get(opts, :directory_visibility) do
-      dir_path = Path.dirname(path) <> "/"
-      store_visibility(dir_path, dir_visibility)
+      if dir_path = parent_directory_path(path) do
+        store_visibility(config, dir_path, dir_visibility)
+      end
     end
 
     opts = maybe_add_acl(opts)
@@ -354,8 +398,7 @@ defmodule Jido.VFS.Adapter.S3 do
               |> String.split("/")
               |> List.last()
 
-            visibility =
-              if String.ends_with?(prefix, "invisible-dir/"), do: :private, else: :public
+            visibility = get_stored_visibility(config, prefix)
 
             %Jido.VFS.Stat.Dir{
               name: name,
@@ -372,7 +415,7 @@ defmodule Jido.VFS.Adapter.S3 do
             name = Path.basename(file.key)
             {:ok, mtime, _} = DateTime.from_iso8601(file.last_modified)
 
-            visibility = if String.starts_with?(name, "invisible"), do: :private, else: :public
+            visibility = get_stored_visibility(config, file.key)
 
             %Jido.VFS.Stat.File{
               name: name,
@@ -479,14 +522,16 @@ defmodule Jido.VFS.Adapter.S3 do
   end
 
   @impl Jido.VFS.Adapter
-  def set_visibility(%Config{} = _config, path, visibility) do
-    store_visibility(path, visibility)
+  def set_visibility(%Config{} = config, path, visibility) do
+    normalized_path = clean_path(Jido.VFS.RelativePath.join_prefix(config.prefix, path))
+    store_visibility(config, normalized_path, visibility)
     :ok
   end
 
   @impl Jido.VFS.Adapter
-  def visibility(%Config{} = _config, path) do
-    visibility = get_stored_visibility(path)
+  def visibility(%Config{} = config, path) do
+    normalized_path = clean_path(Jido.VFS.RelativePath.join_prefix(config.prefix, path))
+    visibility = get_stored_visibility(config, normalized_path)
     {:ok, visibility}
   end
 
@@ -504,6 +549,20 @@ defmodule Jido.VFS.Adapter.S3 do
         path
         |> String.trim_leading("/")
         |> String.replace(~r|/+|, "/")
+    end
+  end
+
+  defp parent_directory_path(path) do
+    cond do
+      String.ends_with?(path, "/") ->
+        nil
+
+      true ->
+        case Path.dirname(path) do
+          "." -> nil
+          "" -> nil
+          dirname -> dirname <> "/"
+        end
     end
   end
 

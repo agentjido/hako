@@ -38,6 +38,29 @@ defmodule JidoVFSTest do
     end
   end
 
+  describe "S3 visibility isolation" do
+    test "visibility metadata is scoped by bucket and prefix" do
+      Jido.VFS.Adapter.S3.reset_visibility_store()
+
+      try do
+        fs_a = Jido.VFS.Adapter.S3.configure(config: [], bucket: "bucket-a")
+        fs_b = Jido.VFS.Adapter.S3.configure(config: [], bucket: "bucket-b")
+        fs_c = Jido.VFS.Adapter.S3.configure(config: [], bucket: "bucket-a", prefix: "prefix-a")
+        fs_d = Jido.VFS.Adapter.S3.configure(config: [], bucket: "bucket-a", prefix: "prefix-b")
+
+        assert :ok = Jido.VFS.set_visibility(fs_a, "shared.txt", :private)
+        assert :ok = Jido.VFS.set_visibility(fs_c, "shared.txt", :private)
+
+        assert {:ok, :private} = Jido.VFS.visibility(fs_a, "shared.txt")
+        assert {:ok, :public} = Jido.VFS.visibility(fs_b, "shared.txt")
+        assert {:ok, :private} = Jido.VFS.visibility(fs_c, "shared.txt")
+        assert {:ok, :public} = Jido.VFS.visibility(fs_d, "shared.txt")
+      after
+        Jido.VFS.Adapter.S3.reset_visibility_store()
+      end
+    end
+  end
+
   describe "path error handling" do
     @describetag :tmp_dir
 
@@ -460,6 +483,16 @@ defmodule JidoVFSTest do
       assert {:error, %Jido.VFS.Errors.AbsolutePath{absolute_path: "/../test"}} =
                Jido.VFS.list_contents(filesystem, "/../test")
     end
+
+    test "copy and move report destination path errors", %{filesystem: filesystem} do
+      :ok = Jido.VFS.write(filesystem, "source.txt", "content")
+
+      assert {:error, %Jido.VFS.Errors.PathTraversal{attempted_path: "../bad-copy.txt"}} =
+               Jido.VFS.copy(filesystem, "source.txt", "../bad-copy.txt")
+
+      assert {:error, %Jido.VFS.Errors.PathTraversal{attempted_path: "../bad-move.txt"}} =
+               Jido.VFS.move(filesystem, "source.txt", "../bad-move.txt")
+    end
   end
 
   describe "copying between different filesystems" do
@@ -485,6 +518,22 @@ defmodule JidoVFSTest do
                )
 
       assert {:ok, :exists} = Jido.VFS.file_exists(filesystem_b, "test.txt")
+    end
+
+    test "direct copy - same adapter rejects traversal in source path", %{prefixes: [prefix_a, prefix_b]} do
+      filesystem_a = Jido.VFS.Adapter.Local.configure(prefix: prefix_a)
+      filesystem_b = Jido.VFS.Adapter.Local.configure(prefix: prefix_b)
+
+      outside_file = Path.join(Path.dirname(prefix_a), "outside-secret.txt")
+      File.write!(outside_file, "secret")
+
+      assert {:error, %Jido.VFS.Errors.PathTraversal{attempted_path: "../outside-secret.txt"}} =
+               Jido.VFS.copy_between_filesystem(
+                 {filesystem_a, "../outside-secret.txt"},
+                 {filesystem_b, "copied.txt"}
+               )
+
+      assert {:ok, :missing} = Jido.VFS.file_exists(filesystem_b, "copied.txt")
     end
 
     test "indirect copy - same adapter" do

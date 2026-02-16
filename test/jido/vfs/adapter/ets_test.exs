@@ -99,6 +99,31 @@ defmodule Jido.VFS.Adapter.ETSTest do
       assert {:ok, "Hello World"} = Jido.VFS.Adapter.ETS.read(config, "source.txt")
       assert {:ok, "Hello World"} = Jido.VFS.Adapter.ETS.read(config, "destination.txt")
     end
+
+    test "copy_between_filesystem copies across different ETS instances" do
+      source_table = :"ets_copy_src_#{System.unique_integer([:positive])}"
+      destination_table = :"ets_copy_dst_#{System.unique_integer([:positive])}"
+
+      source_fs = Jido.VFS.Adapter.ETS.configure(name: source_table)
+      destination_fs = Jido.VFS.Adapter.ETS.configure(name: destination_table)
+
+      start_supervised!({Jido.VFS.Adapter.ETS, source_fs}, id: {:source_copy_ets, source_table})
+
+      start_supervised!({Jido.VFS.Adapter.ETS, destination_fs},
+        id: {:destination_copy_ets, destination_table}
+      )
+
+      assert :ok = Jido.VFS.write(source_fs, "source.txt", "Hello World")
+
+      assert :ok =
+               Jido.VFS.copy_between_filesystem(
+                 {source_fs, "source.txt"},
+                 {destination_fs, "destination.txt"}
+               )
+
+      assert {:ok, "Hello World"} = Jido.VFS.read(destination_fs, "destination.txt")
+      assert {:ok, :missing} = Jido.VFS.file_exists(source_fs, "destination.txt")
+    end
   end
 
   describe "file_exists" do
@@ -159,6 +184,17 @@ defmodule Jido.VFS.Adapter.ETSTest do
       assert :ok = Jido.VFS.Adapter.ETS.delete_directory(config, "parent_dir", recursive: true)
       assert {:ok, :missing} = Jido.VFS.Adapter.ETS.file_exists(config, "parent_dir")
       assert {:ok, :missing} = Jido.VFS.Adapter.ETS.file_exists(config, "parent_dir/file.txt")
+    end
+
+    test "recursive delete does not remove similarly prefixed sibling directories", %{filesystem: filesystem} do
+      {_, config} = filesystem
+
+      :ok = Jido.VFS.Adapter.ETS.write(config, "foo/a.txt", "a", [])
+      :ok = Jido.VFS.Adapter.ETS.write(config, "foobar/b.txt", "b", [])
+
+      assert :ok = Jido.VFS.Adapter.ETS.delete_directory(config, "foo", recursive: true)
+      assert {:ok, :missing} = Jido.VFS.Adapter.ETS.file_exists(config, "foo/a.txt")
+      assert {:ok, :exists} = Jido.VFS.Adapter.ETS.file_exists(config, "foobar/b.txt")
     end
   end
 

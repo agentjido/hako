@@ -67,6 +67,8 @@ defmodule Jido.VFS.Adapter.Git do
     branch = Keyword.get(opts, :branch)
     author = Keyword.get(opts, :author, [])
     commit_message_fn = Keyword.get(opts, :commit_message, &Config.default_commit_message/1)
+    author_name = Keyword.get(author, :name, "Hako")
+    author_email = Keyword.get(author, :email, "hako@localhost")
 
     # Ensure Git is available
     case System.find_executable("git") do
@@ -75,7 +77,7 @@ defmodule Jido.VFS.Adapter.Git do
     end
 
     # Initialize or validate repository
-    {repo_path, current_branch} = setup_repository(repo_path, branch)
+    {repo_path, current_branch} = setup_repository(repo_path, branch, author_name, author_email)
 
     # Configure local adapter for actual file operations
     local_config = Local.configure(prefix: repo_path) |> elem(1)
@@ -83,8 +85,8 @@ defmodule Jido.VFS.Adapter.Git do
     config = %Config{
       repo_path: repo_path,
       branch: current_branch,
-      author_name: Keyword.get(author, :name, "Hako"),
-      author_email: Keyword.get(author, :email, "hako@localhost"),
+      author_name: author_name,
+      author_email: author_email,
       auto_commit?: mode == :auto,
       local_config: local_config,
       commit_message: commit_message_fn
@@ -93,7 +95,7 @@ defmodule Jido.VFS.Adapter.Git do
     {__MODULE__, config}
   end
 
-  defp setup_repository(path, target_branch) do
+  defp setup_repository(path, target_branch, author_name, author_email) do
     path = Path.expand(path)
 
     # Create directory if it doesn't exist
@@ -105,7 +107,16 @@ defmodule Jido.VFS.Adapter.Git do
       # Create initial commit to establish branch
       File.write!(Path.join(path, ".gitkeep"), "")
       git!(path, ["add", ".gitkeep"])
-      git!(path, ["commit", "-m", "Initial commit"])
+
+      git!(path, [
+        "-c",
+        "user.name=#{author_name}",
+        "-c",
+        "user.email=#{author_email}",
+        "commit",
+        "-m",
+        "Initial commit"
+      ])
     end
 
     # Get current branch

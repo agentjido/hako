@@ -3,6 +3,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
   use Mimic
 
   alias Jido.VFS.Adapter.GitHub
+  alias Jido.VFS.Adapter.InMemory
   alias Jido.VFS.Stat.{File, Dir}
 
   @moduletag :github
@@ -451,6 +452,32 @@ defmodule Jido.VFS.Adapter.GitHubTest do
       end)
 
       assert :ok = GitHub.move(config, "source.txt", "dest.txt", [])
+    end
+  end
+
+  describe "copy_between_filesystem/3 fallback behavior" do
+    setup do
+      {_module, config} = GitHub.configure(owner: "octocat", repo: "Hello-World")
+      {:ok, config: config}
+    end
+
+    test "falls back to read/write when streaming is unsupported", %{config: config} do
+      destination_fs = InMemory.configure(name: :"github_copy_#{System.unique_integer([:positive])}")
+      start_supervised!(destination_fs)
+
+      content = "fallback copy content"
+
+      expect(Tentacat.Contents, :find_in, fn _client, "octocat", "Hello-World", "source.txt", "main" ->
+        {200, %{"content" => Base.encode64(content), "encoding" => "base64"}, %{}}
+      end)
+
+      assert :ok =
+               Jido.VFS.copy_between_filesystem(
+                 {{GitHub, config}, "source.txt"},
+                 {destination_fs, "dest.txt"}
+               )
+
+      assert {:ok, ^content} = Jido.VFS.read(destination_fs, "dest.txt")
     end
   end
 

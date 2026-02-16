@@ -213,9 +213,12 @@ defmodule Jido.VFS do
   """
   @spec move(filesystem, Path.t(), Path.t(), keyword()) :: :ok | {:error, term}
   def move({adapter, config}, source, destination, opts \\ []) do
-    with {:ok, normalized_source} <- Jido.VFS.RelativePath.normalize(source),
-         {:ok, normalized_destination} <- Jido.VFS.RelativePath.normalize(destination) do
-      adapter.move(config, normalized_source, normalized_destination, opts)
+    with {:ok, normalized_source} <- Jido.VFS.RelativePath.normalize(source) do
+      with {:ok, normalized_destination} <- Jido.VFS.RelativePath.normalize(destination) do
+        adapter.move(config, normalized_source, normalized_destination, opts)
+      else
+        {:error, reason} -> {:error, convert_path_error(reason, destination)}
+      end
     else
       {:error, reason} -> {:error, convert_path_error(reason, source)}
     end
@@ -244,9 +247,12 @@ defmodule Jido.VFS do
   """
   @spec copy(filesystem, Path.t(), Path.t(), keyword()) :: :ok | {:error, term}
   def copy({adapter, config}, source, destination, opts \\ []) do
-    with {:ok, normalized_source} <- Jido.VFS.RelativePath.normalize(source),
-         {:ok, normalized_destination} <- Jido.VFS.RelativePath.normalize(destination) do
-      adapter.copy(config, normalized_source, normalized_destination, opts)
+    with {:ok, normalized_source} <- Jido.VFS.RelativePath.normalize(source) do
+      with {:ok, normalized_destination} <- Jido.VFS.RelativePath.normalize(destination) do
+        adapter.copy(config, normalized_source, normalized_destination, opts)
+      else
+        {:error, reason} -> {:error, convert_path_error(reason, destination)}
+      end
     else
       {:error, reason} -> {:error, convert_path_error(reason, source)}
     end
@@ -662,27 +668,56 @@ defmodule Jido.VFS do
 
   # Same adapter -> try direct copy if supported
   def copy_between_filesystem(
-        {{adapter, config_source}, path_source} = source,
-        {{adapter, config_destination}, path_destination} = destination,
+        {{adapter, config_source}, path_source},
+        {{adapter, config_destination}, path_destination},
         opts
       ) do
-    with :ok <-
-           adapter.copy(config_source, path_source, config_destination, path_destination, opts) do
-      :ok
+    with {:ok, normalized_source, normalized_destination} <-
+           normalize_copy_paths(path_source, path_destination) do
+      case adapter.copy(
+             config_source,
+             normalized_source,
+             config_destination,
+             normalized_destination,
+             opts
+           ) do
+        :ok ->
+          :ok
+
+        {:error, :unsupported} ->
+          copy_via_local_memory(
+            {{adapter, config_source}, normalized_source},
+            {{adapter, config_destination}, normalized_destination},
+            opts
+          )
+
+        {:error, reason} ->
+          {:error, Errors.to_error(reason)}
+      end
     else
-      {:error, :unsupported} -> copy_via_local_memory(source, destination, opts)
-      {:error, reason} -> {:error, Errors.to_error(reason)}
+      {:error, {:source, reason}} -> {:error, convert_path_error(reason, path_source)}
+      {:error, {:destination, reason}} -> {:error, convert_path_error(reason, path_destination)}
     end
   end
 
   # different adapter
-  def copy_between_filesystem(source, destination, opts) do
-    copy_via_local_memory(source, destination, opts)
+  def copy_between_filesystem({source_filesystem, source_path}, {destination_filesystem, destination_path}, opts) do
+    with {:ok, normalized_source, normalized_destination} <-
+           normalize_copy_paths(source_path, destination_path) do
+      copy_via_local_memory(
+        {source_filesystem, normalized_source},
+        {destination_filesystem, normalized_destination},
+        opts
+      )
+    else
+      {:error, {:source, reason}} -> {:error, convert_path_error(reason, source_path)}
+      {:error, {:destination, reason}} -> {:error, convert_path_error(reason, destination_path)}
+    end
   end
 
   defp copy_via_local_memory(
-         {{source_adapter, _} = source_filesystem, source_path},
-         {{destination_adapter, _} = destination_filesystem, destination_path},
+         {source_filesystem, source_path},
+         {destination_filesystem, destination_path},
          opts
        ) do
     case {Jido.VFS.read_stream(source_filesystem, source_path, opts),
@@ -693,26 +728,46 @@ defmodule Jido.VFS do
         |> Stream.into(write_stream)
         |> Stream.run()
 
+        :ok
+
       # Only A support streaming -> Stream to memory and write when done
-      {{:ok, read_stream}, {:error, ^destination_adapter}} ->
+      {{:ok, read_stream}, {:error, _reason}} ->
         Jido.VFS.write(destination_filesystem, destination_path, Enum.into(read_stream, []))
 
       # Only B support streaming -> Load into memory and stream to B
-      {{:error, ^source_adapter}, {:ok, write_stream}} ->
+      {{:error, _reason}, {:ok, write_stream}} ->
         with {:ok, contents} <- Jido.VFS.read(source_filesystem, source_path) do
           contents
           |> chunk(Keyword.get(opts, :chunk_size, 5 * 1024))
           |> Enum.into(write_stream)
+
+          :ok
         end
 
       # Neither support streaming
-      {{:error, ^source_adapter}, {:error, ^destination_adapter}} ->
+      {{:error, _source_reason}, {:error, _destination_reason}} ->
         with {:ok, contents} <- Jido.VFS.read(source_filesystem, source_path) do
           Jido.VFS.write(destination_filesystem, destination_path, contents)
         end
     end
   rescue
     e -> {:error, Errors.to_error(e)}
+  end
+
+  defp normalize_copy_paths(source_path, destination_path) do
+    case Jido.VFS.RelativePath.normalize(source_path) do
+      {:ok, normalized_source} ->
+        case Jido.VFS.RelativePath.normalize(destination_path) do
+          {:ok, normalized_destination} ->
+            {:ok, normalized_source, normalized_destination}
+
+          {:error, reason} ->
+            {:error, {:destination, reason}}
+        end
+
+      {:error, reason} ->
+        {:error, {:source, reason}}
+    end
   end
 
   @doc false

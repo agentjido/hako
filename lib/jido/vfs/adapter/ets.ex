@@ -159,8 +159,14 @@ defmodule Jido.VFS.Adapter.ETS do
   end
 
   @impl Jido.VFS.Adapter
-  def copy(config, source, source_opts, destination, destination_opts) do
-    call_server(config, {:copy, source, source_opts, destination, destination_opts})
+  def copy(source_config, source, destination_config, destination, opts) do
+    if source_config.name == destination_config.name do
+      call_server(source_config, {:copy, source, destination, opts})
+    else
+      with {:ok, contents} <- read(source_config, source) do
+        write(destination_config, destination, contents, opts)
+      end
+    end
   end
 
   # File Status Operations
@@ -278,11 +284,11 @@ defmodule Jido.VFS.Adapter.ETS do
   end
 
   def handle_call({:copy, source, destination, opts}, _from, state) do
-    handle_copy(source, nil, destination, opts, state)
+    handle_copy(source, destination, opts, state)
   end
 
   def handle_call({:copy, source, _source_opts, destination, destination_opts}, _from, state) do
-    handle_copy(source, nil, destination, destination_opts, state)
+    handle_copy(source, destination, destination_opts, state)
   end
 
   def handle_call({:file_exists, path}, _from, %Config{table: table} = state) do
@@ -489,13 +495,7 @@ defmodule Jido.VFS.Adapter.ETS do
     end)
   end
 
-  defp handle_copy(
-         source,
-         _source_opts,
-         destination,
-         destination_opts,
-         %Config{table: table} = state
-       ) do
+  defp handle_copy(source, destination, destination_opts, %Config{table: table} = state) do
     reply =
       case lookup_file(table, source) do
         {:ok, binary} ->
@@ -514,31 +514,33 @@ defmodule Jido.VFS.Adapter.ETS do
   defp list_directory_contents(table, path) do
     normalized_path = normalize_path(path)
 
-    table
-    |> :ets.tab2list()
-    |> Enum.reduce(%{}, fn {file_path, {content, meta}}, acc ->
-      case check_path_in_directory(file_path, normalized_path) do
-        {:direct_child, name} when name not in [".", ".."] ->
-          if Map.has_key?(acc, name) do
-            if match?(%Jido.VFS.Stat.Dir{}, acc[name]) do
-              acc
-            else
-              case content do
-                map when is_map(map) ->
-                  Map.put(acc, name, create_stat_struct(name, content, meta))
+    :ets.foldl(
+      fn {file_path, {content, meta}}, acc ->
+        case check_path_in_directory(file_path, normalized_path) do
+          {:direct_child, name} when name not in [".", ".."] ->
+            if Map.has_key?(acc, name) do
+              if match?(%Jido.VFS.Stat.Dir{}, acc[name]) do
+                acc
+              else
+                case content do
+                  map when is_map(map) ->
+                    Map.put(acc, name, create_stat_struct(name, content, meta))
 
-                _ ->
-                  acc
+                  _ ->
+                    acc
+                end
               end
+            else
+              Map.put(acc, name, create_stat_struct(name, content, meta))
             end
-          else
-            Map.put(acc, name, create_stat_struct(name, content, meta))
-          end
 
-        _ ->
-          acc
-      end
-    end)
+          _ ->
+            acc
+        end
+      end,
+      %{},
+      table
+    )
     |> Map.values()
   end
 
@@ -633,7 +635,7 @@ defmodule Jido.VFS.Adapter.ETS do
   defp delete_directory_recursive(table, path) do
     :ets.foldl(
       fn {key, _}, :ok ->
-        if String.starts_with?(key, path) do
+        if key == path or String.starts_with?(key, path <> "/") do
           :ets.delete(table, key)
         end
 
