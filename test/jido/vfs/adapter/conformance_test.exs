@@ -11,6 +11,7 @@ defmodule Jido.VFS.Adapter.ConformanceTest do
       start_in_memory_adapter(),
       start_ets_adapter(),
       Jido.VFS.Adapter.S3.configure(config: [], bucket: "conformance"),
+      start_sprite_adapter(),
       Jido.VFS.Adapter.GitHub.configure(owner: "octocat", repo: "hello-world")
     ]
 
@@ -58,5 +59,17 @@ defmodule Jido.VFS.Adapter.ConformanceTest do
     filesystem = Jido.VFS.Adapter.ETS.configure(name: name)
     start_supervised!(filesystem)
     filesystem
+  end
+
+  defp start_sprite_adapter do
+    name = "conformance_sprite_#{System.unique_integer([:positive, :monotonic])}"
+
+    Jido.VFS.Adapter.Sprite.configure(
+      client: JidoVfsTest.SpriteFakeClient,
+      token: "test-token",
+      sprite_name: name,
+      create_on_demand: true,
+      root: "/workspace"
+    )
   end
 end

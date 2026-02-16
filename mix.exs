@@ -70,6 +70,7 @@ defmodule Jido.VFS.MixProject do
       {:splode, "~> 0.2.9"},
       {:git_cli, "~> 0.3.0"},
       {:tentacat, "~> 2.0"},
+      {:sprites, git: "https://github.com/superfly/sprites-ex.git", optional: true},
 
       # Dev/Test dependencies
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

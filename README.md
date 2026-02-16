@@ -11,8 +11,8 @@ Jido.VFS is a filesystem abstraction for Elixir providing a unified interface ov
 ## Features
 
 - **Unified API** - Same operations work across all adapters
-- **Multiple Backends** - Local, S3, Git, GitHub, ETS, and InMemory storage
-- **Version Control** - Git, ETS, and InMemory adapters support versioning
+- **Multiple Backends** - Local, S3, Sprite, Git, GitHub, ETS, and InMemory storage
+- **Version Control** - Git, Sprite, ETS, and InMemory adapters support versioning
 - **Streaming** - Efficient handling of large files
 - **Cross-Filesystem Operations** - Copy files between different storage backends
 - **Visibility Controls** - Public/private file permissions
@@ -31,6 +31,7 @@ Jido.VFS is a filesystem abstraction for Elixir providing a unified interface ov
 |---------|----------|-----------|------------|-------|
 | `Jido.VFS.Adapter.Local` | Local filesystem | Yes | No | Full local filesystem operations |
 | `Jido.VFS.Adapter.S3` | AWS S3 / Minio | Yes | No | Prefix-scoped clear/listing, multipart stream uploads |
+| `Jido.VFS.Adapter.Sprite` | Fly.io Sprites | Yes | Yes | Shell-command filesystem + checkpoint-backed versioning |
 | `Jido.VFS.Adapter.Git` | Git repositories | Yes | Yes | Deterministic bootstrap commit, rollback support |
 | `Jido.VFS.Adapter.GitHub` | GitHub API | No | No | Remote read/write via API, typed unsupported ops |
 | `Jido.VFS.Adapter.ETS` | ETS tables | Yes | Yes | Version storage hardened without dynamic atoms |
@@ -127,6 +128,48 @@ filesystem = Jido.VFS.Adapter.S3.configure(
 # Streaming for large files
 {:ok, stream} = Jido.VFS.read_stream(filesystem, "large-file.bin", chunk_size: 65536)
 Enum.each(stream, fn chunk -> process(chunk) end)
+```
+
+## Sprite Adapter
+
+The Sprite adapter executes shell commands on a [Fly.io Sprite](https://sprites.dev)
+through `sprites-ex`.
+
+```elixir
+# Add sprites-ex in your project if needed
+# {:sprites, git: "https://github.com/superfly/sprites-ex.git"}
+
+filesystem =
+  Jido.VFS.Adapter.Sprite.configure(
+    sprite_name: "my-sprite",
+    token: System.fetch_env!("SPRITES_TOKEN"),
+    root: "/workspace",
+    encoding: :base64
+  )
+
+:ok = Jido.VFS.write(filesystem, "notes/hello.txt", "hello sprite")
+{:ok, "hello sprite"} = Jido.VFS.read(filesystem, "notes/hello.txt")
+{:ok, entries} = Jido.VFS.list_contents(filesystem, "notes")
+```
+
+- `encoding: :base64` is binary-safe and default.
+- `encoding: :raw` is text-oriented and avoids base64 overhead.
+- Pass `create_on_demand: true` to call Sprite create during configure.
+
+Sprite versioning is backed by Sprite checkpoints:
+
+```elixir
+:ok = Jido.VFS.write(filesystem, "doc.txt", "v1")
+:ok = Jido.VFS.commit(filesystem, "checkpoint v1")
+
+:ok = Jido.VFS.write(filesystem, "doc.txt", "v2")
+:ok = Jido.VFS.commit(filesystem, "checkpoint v2")
+
+{:ok, revisions} = Jido.VFS.revisions(filesystem, "doc.txt")
+old_revision = List.last(revisions)
+
+{:ok, "v1"} = Jido.VFS.read_revision(filesystem, "doc.txt", old_revision.sha)
+:ok = Jido.VFS.rollback(filesystem, old_revision.sha, path: "doc.txt")
 ```
 
 ## Git Adapter

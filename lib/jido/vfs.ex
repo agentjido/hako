@@ -106,7 +106,8 @@ defmodule Jido.VFS do
   defp adapter_unsupported_operations(_adapter), do: []
 
   defp supports_versioning_operation?(adapter, operation, arity) do
-    with versioning_module when not is_nil(versioning_module) <- get_versioning_module(adapter) do
+    with versioning_module when not is_nil(versioning_module) <- get_versioning_module(adapter),
+         {:module, _module} <- Code.ensure_loaded(versioning_module) do
       function_exported?(versioning_module, operation, arity)
     else
       _ -> false
@@ -1092,6 +1093,7 @@ defmodule Jido.VFS do
   defp get_versioning_module(Jido.VFS.Adapter.Git), do: Jido.VFS.Adapter.Git
   defp get_versioning_module(Jido.VFS.Adapter.ETS), do: Jido.VFS.Adapter.ETS.Versioning
   defp get_versioning_module(Jido.VFS.Adapter.InMemory), do: Jido.VFS.Adapter.InMemory.Versioning
+  defp get_versioning_module(Jido.VFS.Adapter.Sprite), do: Jido.VFS.Adapter.Sprite.Versioning
   defp get_versioning_module(_), do: nil
 
   @doc """
