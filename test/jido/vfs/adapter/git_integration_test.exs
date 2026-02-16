@@ -1050,7 +1050,7 @@ defmodule Jido.VFS.Adapter.GitIntegrationTest do
       {Git, config} = Git.configure(path: repo_path)
 
       assert config.author_name == "Jido.VFS"
-      assert config.author_email == "hako@localhost"
+      assert config.author_email == "jido.vfs@localhost"
     end
 
     test "mode defaults to manual", %{repo_path: repo_path} do

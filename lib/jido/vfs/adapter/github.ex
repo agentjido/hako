@@ -324,7 +324,7 @@ defmodule Jido.VFS.Adapter.GitHub do
   defp get_config_commit_info do
     config = Application.get_env(:jido_vfs, :github, [])
     name = Keyword.get(config, :name, "Jido.VFS")
-    email = Keyword.get(config, :email, "hako@example.com")
+    email = Keyword.get(config, :email, "jido.vfs@example.com")
 
     %{
       message: "Update via Jido.VFS",

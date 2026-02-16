@@ -69,7 +69,7 @@ defmodule Jido.VFS.Adapter.Git do
     author = Keyword.get(opts, :author, [])
     commit_message_fn = Keyword.get(opts, :commit_message, &Config.default_commit_message/1)
     author_name = Keyword.get(author, :name, "Jido.VFS")
-    author_email = Keyword.get(author, :email, "hako@localhost")
+    author_email = Keyword.get(author, :email, "jido.vfs@localhost")
 
     # Ensure Git is available
     case System.find_executable("git") do
@@ -427,7 +427,7 @@ defmodule Jido.VFS.Adapter.Git do
           :ok
       end
     rescue
-      e -> {:error, Exception.message(e)}
+      e -> {:error, adapter_error(:commit, e)}
     end
   end
 
@@ -451,10 +451,10 @@ defmodule Jido.VFS.Adapter.Git do
           {:ok, revisions}
 
         {error, _code} ->
-          {:error, error}
+          {:error, adapter_error(:revisions, error)}
       end
     rescue
-      e -> {:error, Exception.message(e)}
+      e -> {:error, adapter_error(:revisions, e)}
     end
   end
 
@@ -482,10 +482,10 @@ defmodule Jido.VFS.Adapter.Git do
     try do
       case git(config.repo_path, ["show", "#{sha}:#{path}"]) do
         {output, 0} -> {:ok, output}
-        {error, _code} -> {:error, error}
+        {error, _code} -> {:error, read_revision_error(path, error)}
       end
     rescue
-      e -> {:error, Exception.message(e)}
+      e -> {:error, adapter_error(:read_revision, e)}
     end
   end
 
@@ -493,17 +493,65 @@ defmodule Jido.VFS.Adapter.Git do
   @spec rollback(Config.t(), String.t(), keyword()) :: :ok | {:error, term}
   def rollback(config, sha, opts \\ []) do
     try do
-      if path = Keyword.get(opts, :path) do
-        # Rollback single file
-        git!(config.repo_path, ["checkout", sha, "--", path])
-      else
-        # Rollback entire repository
-        git!(config.repo_path, ["reset", "--hard", sha])
+      with :ok <- ensure_commit_exists(config, sha) do
+        if path = Keyword.get(opts, :path) do
+          case git(config.repo_path, ["checkout", sha, "--", path]) do
+            {_output, 0} -> :ok
+            {error, _code} -> {:error, rollback_path_error(path, error)}
+          end
+        else
+          case git(config.repo_path, ["reset", "--hard", sha]) do
+            {_output, 0} -> :ok
+            {error, _code} -> {:error, adapter_error(:rollback, %{revision: sha, reason: error})}
+          end
+        end
       end
-
-      :ok
     rescue
-      e -> {:error, Exception.message(e)}
+      e -> {:error, adapter_error(:rollback, e)}
     end
   end
+
+  defp ensure_commit_exists(config, sha) do
+    case git(config.repo_path, ["cat-file", "-e", "#{sha}^{commit}"]) do
+      {_output, 0} ->
+        :ok
+
+      {error, _code} ->
+        {:error, adapter_error(:rollback, %{revision: sha, reason: error})}
+    end
+  end
+
+  defp read_revision_error(path, error) when is_binary(error) do
+    if String.contains?(error, "exists on disk, but not in") or
+         String.contains?(error, "does not exist in") do
+      Errors.FileNotFound.exception(file_path: path)
+    else
+      adapter_error(:read_revision, error)
+    end
+  end
+
+  defp read_revision_error(_path, error), do: adapter_error(:read_revision, error)
+
+  defp rollback_path_error(path, error) when is_binary(error) do
+    if String.contains?(error, "pathspec") or
+         String.contains?(error, "did not match any file") or
+         String.contains?(error, "does not exist in") do
+      Errors.FileNotFound.exception(file_path: path)
+    else
+      adapter_error(:rollback, %{path: path, reason: error})
+    end
+  end
+
+  defp rollback_path_error(path, error),
+    do: adapter_error(:rollback, %{path: path, reason: error})
+
+  defp adapter_error(operation, reason) do
+    Errors.AdapterError.exception(
+      adapter: __MODULE__,
+      reason: %{operation: operation, reason: normalize_error_reason(reason)}
+    )
+  end
+
+  defp normalize_error_reason(%{__exception__: true} = exception), do: Exception.message(exception)
+  defp normalize_error_reason(reason), do: reason
 end

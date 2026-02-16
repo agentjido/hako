@@ -35,7 +35,7 @@ defmodule Jido.VFS.Adapter.GitTest do
       # depends on git version/config
       assert config.branch in ["main", "master"]
       assert config.author_name == "Jido.VFS"
-      assert config.author_email == "hako@localhost"
+      assert config.author_email == "jido.vfs@localhost"
       refute config.auto_commit?
     end
 
@@ -341,7 +341,8 @@ defmodule Jido.VFS.Adapter.GitTest do
            local_config: nil
          }}
 
-      assert {:error, _message} = Jido.VFS.read_revision(fs, "nonexistent.txt", "invalid_sha")
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} =
+               Jido.VFS.read_revision(fs, "nonexistent.txt", "invalid_sha")
     end
   end
 

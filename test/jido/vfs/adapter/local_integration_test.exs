@@ -765,7 +765,7 @@ defmodule Jido.VFS.Adapter.LocalIntegrationTest do
     end
 
     test "copy between different local filesystems", %{prefix: prefix} do
-      prefix2 = Path.join(System.tmp_dir!(), "hako_test_#{:erlang.unique_integer([:positive])}")
+      prefix2 = Path.join(System.tmp_dir!(), "jido_vfs_test_#{:erlang.unique_integer([:positive])}")
       File.mkdir_p!(prefix2)
 
       on_exit(fn -> File.rm_rf!(prefix2) end)
