@@ -86,6 +86,10 @@ defmodule Jido.VFS.Adapter.InMemory do
 
   @behaviour Jido.VFS.Adapter
 
+  defp unsupported(operation) do
+    {:error, Errors.UnsupportedOperation.exception(operation: operation, adapter: __MODULE__)}
+  end
+
   @impl Jido.VFS.Adapter
   def starts_processes, do: true
 
@@ -110,10 +114,11 @@ defmodule Jido.VFS.Adapter.InMemory do
   def write(config, path, contents, opts) do
     visibility = Keyword.get(opts, :visibility, :private)
     directory_visibility = Keyword.get(opts, :directory_visibility, :private)
+    timestamp = System.system_time(:second)
 
     Agent.update(Jido.VFS.Registry.via(__MODULE__, config.name), fn state ->
-      file = {IO.iodata_to_binary(contents), %{visibility: visibility}}
-      directory = {%{}, %{visibility: directory_visibility}}
+      file = {IO.iodata_to_binary(contents), %{visibility: visibility, mtime: timestamp}}
+      directory = {%{}, %{visibility: directory_visibility, mtime: timestamp}}
       put_in(state, accessor(path, directory), file)
     end)
   end
@@ -162,12 +167,13 @@ defmodule Jido.VFS.Adapter.InMemory do
   def move(%Config{} = config, source, destination, opts) do
     visibility = Keyword.get(opts, :visibility, :private)
     directory_visibility = Keyword.get(opts, :directory_visibility, :private)
+    timestamp = System.system_time(:second)
 
     Agent.get_and_update(Jido.VFS.Registry.via(__MODULE__, config.name), fn state ->
       case get_in(state, accessor(source)) do
         {binary, _meta} when is_binary(binary) ->
-          file = {binary, %{visibility: visibility}}
-          directory = {%{}, %{visibility: directory_visibility}}
+          file = {binary, %{visibility: visibility, mtime: timestamp}}
+          directory = {%{}, %{visibility: directory_visibility, mtime: timestamp}}
 
           {_, state} =
             state |> put_in(accessor(destination, directory), file) |> pop_in(accessor(source))
@@ -184,12 +190,13 @@ defmodule Jido.VFS.Adapter.InMemory do
   def copy(%Config{} = config, source, destination, opts) do
     visibility = Keyword.get(opts, :visibility, :private)
     directory_visibility = Keyword.get(opts, :directory_visibility, :private)
+    timestamp = System.system_time(:second)
 
     Agent.get_and_update(Jido.VFS.Registry.via(__MODULE__, config.name), fn state ->
       case get_in(state, accessor(source)) do
         {binary, _meta} when is_binary(binary) ->
-          file = {binary, %{visibility: visibility}}
-          directory = {%{}, %{visibility: directory_visibility}}
+          file = {binary, %{visibility: visibility, mtime: timestamp}}
+          directory = {%{}, %{visibility: directory_visibility, mtime: timestamp}}
           {:ok, put_in(state, accessor(destination, directory), file)}
 
         _ ->
@@ -206,7 +213,7 @@ defmodule Jido.VFS.Adapter.InMemory do
         _destination,
         _opts
       ) do
-    {:error, :unsupported}
+    unsupported(:copy_between)
   end
 
   @impl Jido.VFS.Adapter
@@ -236,7 +243,11 @@ defmodule Jido.VFS.Adapter.InMemory do
               bin when is_binary(bin) -> %Jido.VFS.Stat.File{size: byte_size(bin)}
             end
 
-          struct!(struct, name: path, mtime: 0, visibility: meta.visibility)
+          struct!(struct,
+            name: path,
+            mtime: Map.get(meta, :mtime, 0),
+            visibility: meta.visibility
+          )
         end
       end)
 
@@ -246,7 +257,7 @@ defmodule Jido.VFS.Adapter.InMemory do
   @impl Jido.VFS.Adapter
   def create_directory(%Config{} = config, path, opts) do
     directory_visibility = Keyword.get(opts, :directory_visibility, :private)
-    directory = {%{}, %{visibility: directory_visibility}}
+    directory = {%{}, %{visibility: directory_visibility, mtime: System.system_time(:second)}}
 
     Agent.update(Jido.VFS.Registry.via(__MODULE__, config.name), fn state ->
       put_in(state, accessor(path, directory), directory)
@@ -339,7 +350,7 @@ defmodule Jido.VFS.Adapter.InMemory do
       version_key = {path, version_id}
 
       version_data =
-        {IO.iodata_to_binary(contents), %{visibility: visibility, timestamp: timestamp}}
+        {IO.iodata_to_binary(contents), %{visibility: visibility, timestamp: timestamp, mtime: timestamp}}
 
       new_versions = Map.put(versions, version_key, version_data)
 
@@ -349,8 +360,8 @@ defmodule Jido.VFS.Adapter.InMemory do
       final_versions = Map.put(new_versions, path, [version_info | path_versions])
 
       # Update the current file
-      file = {IO.iodata_to_binary(contents), %{visibility: visibility}}
-      directory = {%{}, %{visibility: directory_visibility}}
+      file = {IO.iodata_to_binary(contents), %{visibility: visibility, mtime: timestamp}}
+      directory = {%{}, %{visibility: directory_visibility, mtime: timestamp}}
 
       # Use the same logic as the regular write function 
       updated_files =
@@ -420,7 +431,9 @@ defmodule Jido.VFS.Adapter.InMemory do
       case Map.get(versions, {path, version_id}) do
         {binary, meta} when is_binary(binary) ->
           # Restore the file to current
-          file = {binary, %{visibility: meta.visibility}}
+          file =
+            {binary, %{visibility: meta.visibility, mtime: Map.get(meta, :timestamp, System.system_time(:second))}}
+
           directory = {%{}, %{visibility: :private}}
 
           updated_files =

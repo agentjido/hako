@@ -10,6 +10,8 @@ defmodule Jido.VFS.Adapter.InMemory.Versioning do
   @behaviour Jido.VFS.Adapter.Versioning
 
   alias Jido.VFS.Adapter.InMemory
+  alias Jido.VFS.Errors
+  alias Jido.VFS.Revision
 
   @impl Jido.VFS.Adapter.Versioning
   def commit(_config, _message \\ nil, _opts \\ []) do
@@ -60,7 +62,7 @@ defmodule Jido.VFS.Adapter.InMemory.Versioning do
       end
     else
       # Full rollback not supported for InMemory
-      {:error, :unsupported}
+      {:error, Errors.UnsupportedOperation.exception(operation: :rollback, adapter: InMemory)}
     end
   end
 
@@ -91,8 +93,8 @@ defmodule Jido.VFS.Adapter.InMemory.Versioning do
 
   # Convert InMemory version format to Versioning behaviour format
   defp in_memory_version_to_versioning_format(%{version_id: version_id, timestamp: timestamp}) do
-    %{
-      revision: version_id,
+    %Revision{
+      sha: version_id,
       author_name: "InMemory Adapter",
       author_email: "inmemory@jido.vfs.local",
       message: "InMemory version created at #{DateTime.from_unix!(timestamp) |> DateTime.to_iso8601()}",

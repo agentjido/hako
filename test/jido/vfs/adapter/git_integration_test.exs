@@ -18,7 +18,7 @@ defmodule Jido.VFS.Adapter.GitIntegrationTest do
 
   setup do
     case System.find_executable("git") do
-      nil -> {:skip, "Git not available"}
+      nil -> {:ok, skip: "Git not available"}
       _ -> :ok
     end
 
@@ -1049,7 +1049,7 @@ defmodule Jido.VFS.Adapter.GitIntegrationTest do
     test "default author values", %{repo_path: repo_path} do
       {Git, config} = Git.configure(path: repo_path)
 
-      assert config.author_name == "Hako"
+      assert config.author_name == "Jido.VFS"
       assert config.author_email == "hako@localhost"
     end
 
@@ -1092,7 +1092,8 @@ defmodule Jido.VFS.Adapter.GitIntegrationTest do
       {Git, other_config} = other_fs
 
       result = Git.copy(git_config, "source.txt", other_config, "dest.txt", [])
-      assert result == {:error, :unsupported}
+
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :copy_between}} = result
     end
   end
 end

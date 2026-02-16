@@ -1,4 +1,4 @@
-defmodule HakoTest.Minio do
+defmodule JidoVfsTest.Minio do
   require Logger
 
   def start_link do
@@ -83,12 +83,38 @@ defmodule HakoTest.Minio do
   end
 
   def clean_bucket(name) do
-    with {:ok, %{body: %{contents: list}}} <-
-           ExAws.S3.list_objects(name)
-           |> ExAws.request(config()) do
-      for item <- list do
-        ExAws.S3.delete_object(name, item.key) |> ExAws.request(config())
+    with {:ok, keys} <- list_object_keys(name) do
+      for key <- keys do
+        ExAws.S3.delete_object(name, key) |> ExAws.request(config())
       end
+    end
+  end
+
+  defp list_object_keys(name, continuation_token \\ nil, keys \\ []) do
+    opts =
+      if continuation_token,
+        do: [continuation_token: continuation_token],
+        else: []
+
+    case ExAws.S3.list_objects_v2(name, opts) |> ExAws.request(config()) do
+      {:ok, %{body: body}} ->
+        next_keys = keys ++ Enum.map(Map.get(body, :contents, []), & &1.key)
+
+        truncated? =
+          case Map.get(body, :is_truncated, false) do
+            "true" -> true
+            true -> true
+            _ -> false
+          end
+
+        if truncated? do
+          list_object_keys(name, Map.get(body, :next_continuation_token), next_keys)
+        else
+          {:ok, next_keys}
+        end
+
+      error ->
+        error
     end
   end
 end

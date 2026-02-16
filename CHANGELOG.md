@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Hardened the public API contract to return deterministic shapes only:
+  - `:ok`
+  - `{:ok, value}`
+  - `{:error, %Jido.VFS.Errors.*{}}`
+- Standardized unsupported operation errors to `%Jido.VFS.Errors.UnsupportedOperation{operation, adapter}`.
+- Added `Jido.VFS.supports?/2` for explicit adapter capability checks.
+- Standardized `Jido.VFS.revisions/3` output to `%Jido.VFS.Revision{}` across versioned adapters.
+- Removed legacy `:hako` runtime config reads; adapters now use `:jido_vfs` only.
+- Hardened cross-filesystem copy fallback to use capability checks and tempfile spooling for bounded memory.
+
+### Fixed
+- Normalized adapter error mapping to avoid raw string/atom leaks from public API paths.
+- Fixed `InvalidPath` construction in Local adapter to use the `invalid_path:` field.
+- Hardened ETS version storage to avoid dynamic atom creation.
+- Improved S3 edge behavior:
+  - paginated list/delete for large object sets
+  - multipart upload abort on halted/error flows
+  - prefix-scoped clear semantics
+  - path-scoped visibility resolution
+- Hardened GitHub API error mapping for malformed content and API failures.
+
+### Migration Notes
+- `{:error, :unsupported}` has been replaced by `%Jido.VFS.Errors.UnsupportedOperation{}`.
+- Callers that inferred adapter capabilities from error payloads should use `Jido.VFS.supports?/2`.
+- `revisions/3` consumers should expect `%Jido.VFS.Revision{}` values (with `sha` populated for all versioned adapters).
+- Runtime configuration for Git/GitHub must use `:jido_vfs` app env keys.
+
 ## [1.0.0] - 2024-12-24
 
 ### Added

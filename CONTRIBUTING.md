@@ -29,7 +29,14 @@ Welcome to the Jido.VFS contributor's guide! We're excited that you're intereste
    MIX_ENV=test mix minio_server.download --arch darwin-arm64 --version latest
    ```
 
-4. **Quality Checks**
+4. **Git Test Setup (Optional)**
+   ```bash
+   # Required for git adapter integration tests
+   git config --global user.name "Your Name"
+   git config --global user.email "you@example.com"
+   ```
+
+5. **Quality Checks**
    ```bash
    # Run the full quality check suite
    mix quality
@@ -41,28 +48,47 @@ Welcome to the Jido.VFS contributor's guide! We're excited that you're intereste
    mix credo                     # Static analysis
    ```
 
+## V1 Hardening Gates
+
+Before merging release-sensitive changes, run this full matrix:
+
+```bash
+mix test
+mix test --include integration
+mix test --include git
+mix test --include s3 --include integration
+mix quality
+```
+
+Notes:
+- `mix test` excludes `:integration` and `:s3` by default in `test/test_helper.exs`.
+- S3 tests require Minio. If Minio is unavailable, S3 modules are tagged with `skip`.
+- Integration runs should remain deterministic and network-independent except tagged adapter suites.
+
 ## Code Organization
 
 ### Project Structure
 ```
 .
 ├── lib/
-│   ├── jido_vfs/
-│   │   ├── adapter/       # Filesystem adapters
-│   │   │   ├── local.ex   # Local filesystem
-│   │   │   ├── in_memory.ex # In-memory storage
-│   │   │   ├── ets.ex     # ETS-backed storage
-│   │   │   ├── s3.ex      # AWS S3 / Minio
-│   │   │   ├── git.ex     # Git repositories
-│   │   │   └── github.ex  # GitHub API
-│   │   ├── errors.ex      # Error types
-│   │   ├── filesystem.ex  # Filesystem behaviour
-│   │   ├── stat/          # File stat structures
-│   │   └── visibility.ex  # Visibility handling
-│   └── jido_vfs.ex           # Main entry point
+│   ├── jido/
+│   │   ├── vfs.ex            # Main entry point
+│   │   └── vfs/
+│   │       ├── adapter/      # Filesystem adapters
+│   │       │   ├── local.ex  # Local filesystem
+│   │       │   ├── in_memory.ex # In-memory storage
+│   │       │   ├── ets.ex    # ETS-backed storage
+│   │       │   ├── s3.ex     # AWS S3 / Minio
+│   │       │   ├── git.ex    # Git repositories
+│   │       │   └── github.ex # GitHub API
+│   │       ├── errors.ex     # Typed error classes
+│   │       ├── filesystem.ex # Filesystem behaviour
+│   │       ├── revision.ex   # Unified revision struct
+│   │       └── stat/         # File stat structures
 ├── test/
-│   ├── jido_vfs/
-│   │   └── adapter/      # Adapter tests
+│   ├── jido/
+│   │   └── vfs/
+│   │       └── adapter/      # Adapter tests
 │   ├── support/          # Test helpers
 │   └── test_helper.exs
 └── mix.exs
@@ -94,7 +120,8 @@ Welcome to the Jido.VFS contributor's guide! We're excited that you're intereste
    ```elixir
    @type filesystem :: {module(), Jido.VFS.Adapter.config()}
 
-   @spec read(filesystem, Path.t(), keyword()) :: {:ok, binary} | {:error, term}
+   @spec read(filesystem, Path.t(), keyword()) ::
+           {:ok, binary()} | {:error, Jido.VFS.Errors.error()}
    def read({adapter, config}, path, opts \\ []) do
      # Implementation
    end
@@ -133,7 +160,7 @@ Welcome to the Jido.VFS contributor's guide! We're excited that you're intereste
    mix coveralls
 
    # Run specific test file
-   mix test test/jido_vfs/adapter/local_test.exs
+   mix test test/jido/vfs/adapter/local_test.exs
 
    # Include S3 tests (requires Minio)
    mix test --include s3
@@ -155,10 +182,10 @@ Welcome to the Jido.VFS contributor's guide! We're excited that you're intereste
    ```
 
 2. **Return Values**
-   - Use tagged tuples: `{:ok, result}` or `{:error, reason}`
-   - Create specific error types for different failures
-   - Avoid silent failures
-   - Document error conditions
+   - Public API return shapes must be `:ok`, `{:ok, value}`, or `{:error, %Jido.VFS.Errors.*{}}`
+   - Do not leak raw string errors from adapters
+   - Unsupported operations must return `%Jido.VFS.Errors.UnsupportedOperation{}`
+   - Prefer explicit capability checks via `Jido.VFS.supports?/2`
 
 ## Git Workflow
 
@@ -226,8 +253,8 @@ git commit -m "feat(api)!: change filesystem return type"
 Releases are handled automatically by maintainers. Contributors should:
 
 1. **Use Conventional Commits** - Your commit messages determine changelog entries
-2. **Do NOT edit `CHANGELOG.md`** - It is auto-generated during releases
-3. **Documentation** - Update guides and docstrings as needed
+2. **Update `CHANGELOG.md` (`[Unreleased]`)** for behavior changes, especially hardening or breakage
+3. **Documentation** - Keep README and CONTRIBUTING aligned with runtime behavior and test matrix
 
 ## Additional Resources
 

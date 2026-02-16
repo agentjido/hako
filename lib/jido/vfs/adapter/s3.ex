@@ -1,6 +1,6 @@
 defmodule Jido.VFS.Adapter.S3 do
   @moduledoc """
-  Hako Adapter for Amazon S3 compatible storage.
+  Jido.VFS adapter for Amazon S3 compatible storage.
 
   ## Direct usage
 
@@ -19,7 +19,7 @@ defmodule Jido.VFS.Adapter.S3 do
   ## Usage with a module
 
       defmodule S3FileSystem do
-        use Hako,
+        use Jido.VFS.Filesystem,
           adapter: Jido.VFS.Adapter.S3,
           bucket: "default",
           config: [
@@ -51,63 +51,117 @@ defmodule Jido.VFS.Adapter.S3 do
       # Minimum part size for S3 multipart upload is 5MB
       @min_part_size 5 * 1024 * 1024
 
+      defp adapter_error(reason) do
+        Errors.AdapterError.exception(adapter: Jido.VFS.Adapter.S3, reason: reason)
+      end
+
       defp upload_part(config, path, id, index, data, opts) do
         operation = ExAws.S3.upload_part(config.bucket, path, id, index + 1, data, opts)
 
         case ExAws.request(operation, config.config) do
           {:ok, %{headers: headers}} ->
-            {_, etag} = Enum.find(headers, fn {k, _v} -> String.downcase(k) == "etag" end)
-            etag
+            etag =
+              Enum.find_value(headers, fn {k, value} ->
+                if String.downcase(to_string(k)) == "etag", do: value
+              end)
+
+            {:ok, etag}
+
+          {:error, error} ->
+            {:error, adapter_error(error)}
 
           error ->
-            throw({:upload_part_failed, %Errors.AdapterError{adapter: __MODULE__, reason: error}})
+            {:error, adapter_error(error)}
         end
       end
 
-      def into(%{config: config, path: path, opts: opts} = stream) do
-        {:ok, %{body: %{upload_id: upload_id}}} =
-          ExAws.S3.initiate_multipart_upload(config.bucket, path, opts)
-          |> ExAws.request(config.config)
+      defp complete_upload(config, path, upload_id, etags) do
+        operation =
+          ExAws.S3.complete_multipart_upload(
+            config.bucket,
+            path,
+            upload_id,
+            Enum.sort_by(etags, &elem(&1, 0))
+          )
 
-        collector_fun = fn
-          %{acc: acc, index: index, etags: etags} = data, {:cont, elem}
-          when byte_size(acc) + byte_size(elem) >= @min_part_size ->
-            new_data = acc <> elem
-            etag = upload_part(config, path, upload_id, index, new_data, opts)
-            %{data | acc: "", index: index + 1, etags: [{index + 1, etag} | etags]}
+        case ExAws.request(operation, config.config) do
+          {:ok, response} ->
+            {:ok, response}
 
-          %{acc: acc} = data, {:cont, elem} ->
-            %{data | acc: acc <> elem}
-
-          %{acc: acc, index: index, etags: etags} = data, :done when byte_size(acc) > 0 ->
-            etag = upload_part(config, path, upload_id, index, acc, opts)
-
-            data = %{
-              data
-              | acc: "",
-                index: index + 1,
-                etags: [{index + 1, etag} | etags]
-            }
-
-            {:ok, _} =
-              ExAws.S3.complete_multipart_upload(
-                config.bucket,
-                path,
-                upload_id,
-                Enum.sort_by(data.etags, &elem(&1, 0))
-              )
-              |> ExAws.request(config.config)
-
-            stream
-
-          %{acc: ""} = _data, :done ->
-            stream
-
-          _data, :halt ->
-            :ok
+          {:error, error} ->
+            {:error, adapter_error(error)}
         end
+      end
 
-        {%{upload_id: upload_id, acc: "", index: 0, etags: []}, collector_fun}
+      defp abort_upload(config, path, upload_id) do
+        ExAws.S3.abort_multipart_upload(config.bucket, path, upload_id)
+        |> ExAws.request(config.config)
+
+        :ok
+      rescue
+        _ -> :ok
+      end
+
+      def into(%{config: config, path: path, opts: opts} = stream) do
+        case ExAws.S3.initiate_multipart_upload(config.bucket, path, opts)
+             |> ExAws.request(config.config) do
+          {:ok, %{body: %{upload_id: upload_id}}} ->
+            collector_fun = fn
+              %{acc: acc, index: index, etags: etags} = data, {:cont, elem} ->
+                binary = IO.iodata_to_binary(elem)
+
+                if byte_size(acc) + byte_size(binary) >= @min_part_size do
+                  chunk = acc <> binary
+
+                  case upload_part(config, path, upload_id, index, chunk, opts) do
+                    {:ok, etag} ->
+                      %{data | acc: "", index: index + 1, etags: [{index + 1, etag} | etags]}
+
+                    {:error, error} ->
+                      abort_upload(config, path, upload_id)
+                      throw({:upload_part_failed, error})
+                  end
+                else
+                  %{data | acc: acc <> binary}
+                end
+
+              %{acc: acc, index: index, etags: etags}, :done when byte_size(acc) > 0 ->
+                with {:ok, etag} <- upload_part(config, path, upload_id, index, acc, opts),
+                     {:ok, _} <- complete_upload(config, path, upload_id, [{index + 1, etag} | etags]) do
+                  stream
+                else
+                  {:error, error} ->
+                    abort_upload(config, path, upload_id)
+                    throw({:complete_upload_failed, error})
+                end
+
+              %{etags: []}, :done ->
+                abort_upload(config, path, upload_id)
+                stream
+
+              %{etags: etags}, :done ->
+                case complete_upload(config, path, upload_id, etags) do
+                  {:ok, _} ->
+                    stream
+
+                  {:error, error} ->
+                    abort_upload(config, path, upload_id)
+                    throw({:complete_upload_failed, error})
+                end
+
+              _data, :halt ->
+                abort_upload(config, path, upload_id)
+                :ok
+            end
+
+            {%{upload_id: upload_id, acc: "", index: 0, etags: []}, collector_fun}
+
+          {:error, error} ->
+            raise adapter_error(error)
+
+          error ->
+            raise adapter_error(error)
+        end
       end
     end
   end
@@ -149,26 +203,7 @@ defmodule Jido.VFS.Adapter.S3 do
 
   defp get_stored_visibility(%Config{} = config, path) do
     table = ensure_visibility_table()
-    key = visibility_key(config, path)
-
-    case :ets.lookup(table, key) do
-      [{^key, visibility}] ->
-        visibility
-
-      [] ->
-        case parent_directory_path(path) do
-          nil ->
-            :public
-
-          parent_path ->
-            parent_key = visibility_key(config, parent_path)
-
-            case :ets.lookup(table, parent_key) do
-              [{^parent_key, visibility}] -> visibility
-              [] -> :public
-            end
-        end
-    end
+    resolve_visibility(table, config, path)
   end
 
   def reset_visibility_store do
@@ -376,62 +411,45 @@ defmodule Jido.VFS.Adapter.S3 do
   @impl Jido.VFS.Adapter
   def list_contents(%Config{} = config, path) do
     base_path = clean_path(Jido.VFS.RelativePath.join_prefix(config.prefix, path))
-    list_prefix = if path in ["", "."], do: "", else: base_path
+    list_prefix = if path in ["", "."], do: clear_prefix(config), else: base_path
 
-    operation =
-      ExAws.S3.list_objects_v2(config.bucket,
-        prefix: list_prefix,
-        delimiter: "/"
-      )
+    with {:ok, %{contents: contents, common_prefixes: prefixes}} <-
+           list_objects_paginated(config, list_prefix, "/") do
+      directories =
+        prefixes
+        |> Enum.map(fn %{prefix: prefix} ->
+          name =
+            prefix
+            |> String.trim_trailing("/")
+            |> String.split("/")
+            |> List.last()
 
-    case ExAws.request(operation, config.config) do
-      {:ok, %{body: body} = _response} ->
-        contents = Map.get(body, :contents, [])
-        prefixes = Map.get(body, :common_prefixes, [])
+          visibility = get_stored_visibility(config, prefix)
 
-        directories =
-          prefixes
-          |> Enum.map(fn %{prefix: prefix} ->
-            name =
-              prefix
-              |> String.trim_trailing("/")
-              |> String.split("/")
-              |> List.last()
+          %Jido.VFS.Stat.Dir{
+            name: name,
+            size: 0,
+            visibility: visibility,
+            mtime: DateTime.utc_now()
+          }
+        end)
 
-            visibility = get_stored_visibility(config, prefix)
+      files =
+        contents
+        |> Enum.reject(fn file -> String.ends_with?(file.key, "/") end)
+        |> Enum.map(fn file ->
+          name = Path.basename(file.key)
+          visibility = get_stored_visibility(config, file.key)
 
-            %Jido.VFS.Stat.Dir{
-              name: name,
-              size: 0,
-              visibility: visibility,
-              mtime: DateTime.utc_now()
-            }
-          end)
+          %Jido.VFS.Stat.File{
+            name: name,
+            size: parse_s3_size(file.size),
+            visibility: visibility,
+            mtime: parse_s3_mtime(file.last_modified)
+          }
+        end)
 
-        files =
-          contents
-          |> Enum.reject(fn file -> String.ends_with?(file.key, "/") end)
-          |> Enum.map(fn file ->
-            name = Path.basename(file.key)
-            {:ok, mtime, _} = DateTime.from_iso8601(file.last_modified)
-
-            visibility = get_stored_visibility(config, file.key)
-
-            %Jido.VFS.Stat.File{
-              name: name,
-              size: String.to_integer(file.size),
-              visibility: visibility,
-              mtime: mtime
-            }
-          end)
-
-        {:ok, directories ++ files}
-
-      {:error, error} ->
-        {:error, %Errors.AdapterError{adapter: __MODULE__, reason: error}}
-
-      error ->
-        {:error, %Errors.AdapterError{adapter: __MODULE__, reason: error}}
+      {:ok, directories ++ files}
     end
   end
 
@@ -447,35 +465,7 @@ defmodule Jido.VFS.Adapter.S3 do
     path = if String.ends_with?(path, "/"), do: path, else: path <> "/"
 
     if Keyword.get(opts, :recursive, false) do
-      try do
-        config.bucket
-        |> ExAws.S3.list_objects_v2(prefix: path)
-        |> ExAws.stream!(config.config)
-        |> Task.async_stream(
-          fn %{key: key} ->
-            config.bucket
-            |> ExAws.S3.delete_object(key)
-            |> ExAws.request(config.config)
-            |> case do
-              {:ok, _} ->
-                {:ok, :exists}
-
-              {:error, {:http_error, 404, _}} ->
-                {:ok, :missing}
-
-              {:error, error} ->
-                throw(%Errors.AdapterError{adapter: __MODULE__, reason: error})
-            end
-          end,
-          max_concurrency: 10
-        )
-        |> Stream.run()
-
-        :ok
-      catch
-        error ->
-          {:error, error}
-      end
+      delete_objects_by_prefix(config, path)
     else
       case list_contents(config, path) do
         {:ok, []} ->
@@ -492,33 +482,7 @@ defmodule Jido.VFS.Adapter.S3 do
 
   @impl Jido.VFS.Adapter
   def clear(config) do
-    try do
-      operation = ExAws.S3.list_objects_v2(config.bucket)
-
-      operation
-      |> ExAws.stream!(config.config)
-      |> Task.async_stream(
-        fn %{key: key} ->
-          ExAws.S3.delete_object(config.bucket, key)
-          |> ExAws.request(config.config)
-          |> case do
-            {:ok, _} ->
-              {:ok, :deleted}
-
-            {:error, error} ->
-              throw({:delete_failed, key, %Errors.AdapterError{adapter: __MODULE__, reason: error}})
-          end
-        end,
-        max_concurrency: 10,
-        ordered: false
-      )
-      |> Stream.run()
-
-      :ok
-    catch
-      {:delete_failed, _key, error} ->
-        {:error, error}
-    end
+    delete_objects_by_prefix(config, clear_prefix(config))
   end
 
   @impl Jido.VFS.Adapter
@@ -553,16 +517,126 @@ defmodule Jido.VFS.Adapter.S3 do
   end
 
   defp parent_directory_path(path) do
-    cond do
-      String.ends_with?(path, "/") ->
-        nil
+    normalized = String.trim_trailing(path, "/")
 
-      true ->
-        case Path.dirname(path) do
-          "." -> nil
-          "" -> nil
-          dirname -> dirname <> "/"
+    case Path.dirname(normalized) do
+      "." -> nil
+      "" -> nil
+      dirname -> dirname <> "/"
+    end
+  end
+
+  defp resolve_visibility(table, %Config{} = config, path) do
+    key = visibility_key(config, path)
+
+    case :ets.lookup(table, key) do
+      [{^key, visibility}] ->
+        visibility
+
+      [] ->
+        case parent_directory_path(path) do
+          nil -> :public
+          parent_path -> resolve_visibility(table, config, parent_path)
         end
+    end
+  end
+
+  defp parse_s3_size(size) when is_integer(size), do: size
+  defp parse_s3_size(size) when is_binary(size), do: String.to_integer(size)
+
+  defp parse_s3_mtime(timestamp) when is_binary(timestamp) do
+    case DateTime.from_iso8601(timestamp) do
+      {:ok, datetime, _offset} -> datetime
+      _ -> DateTime.utc_now()
+    end
+  end
+
+  defp parse_s3_mtime(_), do: DateTime.utc_now()
+
+  defp clear_prefix(%Config{} = config) do
+    cleaned_prefix = clean_path(config.prefix || "/")
+
+    cond do
+      cleaned_prefix in ["", "."] -> ""
+      String.ends_with?(cleaned_prefix, "/") -> cleaned_prefix
+      true -> cleaned_prefix <> "/"
+    end
+  end
+
+  defp delete_objects_by_prefix(%Config{} = config, prefix) do
+    with {:ok, %{contents: contents}} <- list_objects_paginated(config, prefix, nil) do
+      contents
+      |> Enum.map(& &1.key)
+      |> Enum.uniq()
+      |> Enum.reduce_while(:ok, fn key, :ok ->
+        case ExAws.S3.delete_object(config.bucket, key) |> ExAws.request(config.config) do
+          {:ok, _} ->
+            {:cont, :ok}
+
+          {:error, {:http_error, 404, _}} ->
+            {:cont, :ok}
+
+          {:error, error} ->
+            {:halt, {:error, %Errors.AdapterError{adapter: __MODULE__, reason: error}}}
+        end
+      end)
+    end
+  end
+
+  defp list_objects_paginated(config, prefix, delimiter) do
+    do_list_objects_paginated(config, prefix, delimiter, nil, [], MapSet.new())
+  end
+
+  defp do_list_objects_paginated(config, prefix, delimiter, continuation_token, contents_acc, prefixes_acc) do
+    opts = [prefix: prefix]
+    opts = if delimiter, do: Keyword.put(opts, :delimiter, delimiter), else: opts
+
+    opts =
+      if continuation_token,
+        do: Keyword.put(opts, :continuation_token, continuation_token),
+        else: opts
+
+    operation = ExAws.S3.list_objects_v2(config.bucket, opts)
+
+    case ExAws.request(operation, config.config) do
+      {:ok, %{body: body}} ->
+        next_contents = contents_acc ++ Map.get(body, :contents, [])
+
+        next_prefixes =
+          body
+          |> Map.get(:common_prefixes, [])
+          |> Enum.reduce(prefixes_acc, fn %{prefix: object_prefix}, acc ->
+            MapSet.put(acc, object_prefix)
+          end)
+
+        truncated? =
+          case Map.get(body, :is_truncated, false) do
+            "true" -> true
+            true -> true
+            _ -> false
+          end
+
+        next_token = Map.get(body, :next_continuation_token)
+
+        if truncated? && is_binary(next_token) && next_token != "" do
+          do_list_objects_paginated(config, prefix, delimiter, next_token, next_contents, next_prefixes)
+        else
+          {:ok,
+           %{
+             contents: next_contents,
+             common_prefixes:
+               next_prefixes
+               |> MapSet.to_list()
+               |> Enum.sort()
+               |> Enum.map(&%{prefix: &1})
+           }}
+        end
+
+      {:error, error} ->
+        {:error, %Errors.AdapterError{adapter: __MODULE__, reason: error}}
+
+      error ->
+        {:error, %Errors.AdapterError{adapter: __MODULE__, reason: error}}
     end
   end
 

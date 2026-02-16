@@ -1,6 +1,6 @@
 defmodule Jido.VFS.Revision do
   @moduledoc """
-  Represents a Git revision/commit in the Hako filesystem.
+  Represents a revision/commit in Jido.VFS.
 
   Contains metadata about a specific point in the repository's history.
   """

@@ -3,14 +3,22 @@ defmodule Jido.VFS.Adapter.S3Test do
   import Jido.VFS.AdapterTest
 
   @moduletag :s3
+  @minio_available Application.compile_env(:jido_vfs, :minio_available, false)
 
-  setup do
-    config = HakoTest.Minio.config()
-    HakoTest.Minio.clean_bucket("default")
-    HakoTest.Minio.recreate_bucket("default")
+  if not @minio_available do
+    @moduletag skip: "Minio not available"
+  end
+
+  setup_all do
+    {:ok, raw_config: JidoVfsTest.Minio.config()}
+  end
+
+  setup %{raw_config: config} do
+    JidoVfsTest.Minio.clean_bucket("default")
+    JidoVfsTest.Minio.recreate_bucket("default")
 
     on_exit(fn ->
-      HakoTest.Minio.clean_bucket("default")
+      JidoVfsTest.Minio.clean_bucket("default")
     end)
 
     {:ok, config: config, bucket: "default"}
@@ -23,12 +31,12 @@ defmodule Jido.VFS.Adapter.S3Test do
 
   describe "cross bucket" do
     setup %{config: config} do
-      config_b = HakoTest.Minio.config()
-      HakoTest.Minio.clean_bucket("secondary")
-      HakoTest.Minio.recreate_bucket("secondary")
+      config_b = JidoVfsTest.Minio.config()
+      JidoVfsTest.Minio.clean_bucket("secondary")
+      JidoVfsTest.Minio.recreate_bucket("secondary")
 
       on_exit(fn ->
-        HakoTest.Minio.clean_bucket("secondary")
+        JidoVfsTest.Minio.clean_bucket("secondary")
       end)
 
       {:ok, config_a: config, config_b: config_b}

@@ -17,14 +17,14 @@ defmodule Jido.VFS.AdapterTest do
         assert {:ok, "Hello World"} = Jido.VFS.read(filesystem, "test.txt")
       end
 
-      test "user can stream to a filesystem", %{filesystem: {adapter, _} = filesystem} do
+      test "user can stream to a filesystem", %{filesystem: filesystem} do
         case Jido.VFS.write_stream(filesystem, "test.txt") do
           {:ok, stream} ->
             Enum.into(["Hello", " ", "World"], stream)
 
             assert {:ok, "Hello World"} = Jido.VFS.read(filesystem, "test.txt")
 
-          {:error, ^adapter} ->
+          {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :write_stream}} ->
             :ok
         end
       end
@@ -42,27 +42,47 @@ defmodule Jido.VFS.AdapterTest do
         assert {:ok, "Hello World"} = Jido.VFS.read(filesystem, "test.txt")
       end
 
-      test "user can stream from filesystem", %{filesystem: {adapter, _} = filesystem} do
+      test "user can stream from filesystem", %{filesystem: filesystem} do
         :ok = Jido.VFS.write(filesystem, "test.txt", "Hello World")
 
         case Jido.VFS.read_stream(filesystem, "test.txt") do
           {:ok, stream} ->
             assert Enum.into(stream, <<>>) == "Hello World"
 
-          {:error, ^adapter} ->
+          {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :read_stream}} ->
             :ok
         end
       end
 
-      test "user can stream in a certain chunk size", %{filesystem: {adapter, _} = filesystem} do
+      test "user can stream in a certain chunk size", %{filesystem: filesystem} do
         :ok = Jido.VFS.write(filesystem, "test.txt", "Hello World")
 
         case Jido.VFS.read_stream(filesystem, "test.txt", chunk_size: 2) do
           {:ok, stream} ->
             assert ["He" | _] = Enum.into(stream, [])
 
-          {:error, ^adapter} ->
+          {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :read_stream}} ->
             :ok
+        end
+      end
+
+      test "path traversal is rejected with typed errors", %{filesystem: filesystem} do
+        assert {:error, %Jido.VFS.Errors.PathTraversal{}} = Jido.VFS.read(filesystem, "../escape.txt")
+      end
+
+      test "absolute paths are rejected with typed errors", %{filesystem: filesystem} do
+        assert {:error, %Jido.VFS.Errors.AbsolutePath{}} = Jido.VFS.read(filesystem, "/escape.txt")
+      end
+
+      test "supports?/2 drives typed unsupported responses", %{filesystem: filesystem} do
+        unless Jido.VFS.supports?(filesystem, :stat) do
+          assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :stat}} =
+                   Jido.VFS.stat(filesystem, "test.txt")
+        end
+
+        unless Jido.VFS.supports?(filesystem, :access) do
+          assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :access}} =
+                   Jido.VFS.access(filesystem, "test.txt", [:read])
         end
       end
 

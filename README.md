@@ -17,16 +17,39 @@ Jido.VFS is a filesystem abstraction for Elixir providing a unified interface ov
 - **Cross-Filesystem Operations** - Copy files between different storage backends
 - **Visibility Controls** - Public/private file permissions
 
+## Contract Guarantees (V1)
+
+- Public API return shape is deterministic: `:ok`, `{:ok, value}`, or `{:error, %Jido.VFS.Errors.*{}}`
+- Unsupported operations always return `%Jido.VFS.Errors.UnsupportedOperation{operation, adapter}`
+- Paths are normalized before adapter calls and traversal/absolute paths are rejected with typed errors
+- Cross-filesystem copy is memory-bounded: native copy if available, then streaming, then tempfile spooling fallback
+- Versioned adapters (`Git`, `ETS`, `InMemory`) return `%Jido.VFS.Revision{}` values from `revisions/3`
+
 ## Adapters
 
-| Adapter | Use Case | Features |
-|---------|----------|----------|
-| `Jido.VFS.Adapter.Local` | Local filesystem | Standard file operations, streaming |
-| `Jido.VFS.Adapter.S3` | AWS S3 / Minio | Cloud storage, streaming, presigned URLs |
-| `Jido.VFS.Adapter.Git` | Git repositories | Version control, commit history, rollback |
-| `Jido.VFS.Adapter.GitHub` | GitHub API | Remote repo access, commits via API |
-| `Jido.VFS.Adapter.ETS` | ETS tables | Fast in-memory with versioning |
-| `Jido.VFS.Adapter.InMemory` | Testing | Ephemeral storage with versioning |
+| Adapter | Use Case | Streaming | Versioning | Notes |
+|---------|----------|-----------|------------|-------|
+| `Jido.VFS.Adapter.Local` | Local filesystem | Yes | No | Full local filesystem operations |
+| `Jido.VFS.Adapter.S3` | AWS S3 / Minio | Yes | No | Prefix-scoped clear/listing, multipart stream uploads |
+| `Jido.VFS.Adapter.Git` | Git repositories | Yes | Yes | Deterministic bootstrap commit, rollback support |
+| `Jido.VFS.Adapter.GitHub` | GitHub API | No | No | Remote read/write via API, typed unsupported ops |
+| `Jido.VFS.Adapter.ETS` | ETS tables | Yes | Yes | Version storage hardened without dynamic atoms |
+| `Jido.VFS.Adapter.InMemory` | Testing | Yes | Yes | Ephemeral storage with version snapshots |
+
+## Capability Checks
+
+Use `supports?/2` before optional operations:
+
+```elixir
+if Jido.VFS.supports?(filesystem, :write_stream) do
+  {:ok, stream} = Jido.VFS.write_stream(filesystem, "large.bin")
+  Stream.into(data_stream, stream) |> Stream.run()
+else
+  :ok = Jido.VFS.write(filesystem, "large.bin", IO.iodata_to_binary(Enum.to_list(data_stream)))
+end
+```
+
+This avoids relying on matching adapter error payloads to determine capabilities.
 
 ## Quick Start
 
@@ -215,6 +238,8 @@ s3_fs = Jido.VFS.Adapter.S3.configure(bucket: "my-bucket")
   {local_fs, "downloads/backup.zip"}
 )
 ```
+
+`copy_between_filesystem/3` prefers native adapter copy, then stream-based copy, and finally tempfile spooling for bounded-memory fallback behavior.
 
 ## Streaming
 

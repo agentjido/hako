@@ -1,6 +1,6 @@
 defmodule Jido.VFS.Adapter.Local do
   @moduledoc """
-  Hako Adapter for the local filesystem.
+  Jido.VFS adapter for the local filesystem.
 
   ## Direct usage
 
@@ -93,6 +93,12 @@ defmodule Jido.VFS.Adapter.Local do
          :ok <- File.write(path, contents),
          :ok <- maybe_chmod(path, mode) do
       :ok
+    else
+      {:error, reason} when is_atom(reason) ->
+        {:error, convert_file_error(reason, path)}
+
+      {:error, %{__struct__: _} = error} ->
+        {:error, error}
     end
   end
 
@@ -221,7 +227,17 @@ defmodule Jido.VFS.Adapter.Local do
   @impl Jido.VFS.Adapter
   def create_directory(%Config{} = config, path, opts) do
     path = full_path(config, path)
-    ensure_directory(config, path, opts)
+
+    case ensure_directory(config, path, opts) do
+      :ok ->
+        :ok
+
+      {:error, reason} when is_atom(reason) ->
+        {:error, convert_file_error(reason, path)}
+
+      {:error, %{__struct__: _} = error} ->
+        {:error, error}
+    end
   end
 
   @impl Jido.VFS.Adapter
@@ -333,7 +349,7 @@ defmodule Jido.VFS.Adapter.Local do
     if Path.dirname(path) != path do
       :ok
     else
-      {:error, Errors.InvalidPath.exception(path: path, reason: "infinite loop detected")}
+      {:error, Errors.InvalidPath.exception(invalid_path: path, reason: "infinite loop detected")}
     end
   end
 
@@ -357,7 +373,7 @@ defmodule Jido.VFS.Adapter.Local do
   end
 
   defp convert_file_error(:einval, path) do
-    Errors.InvalidPath.exception(path: path, reason: "invalid path")
+    Errors.InvalidPath.exception(invalid_path: path, reason: "invalid path")
   end
 
   defp convert_file_error(:eacces, path) do
@@ -457,7 +473,8 @@ defmodule Jido.VFS.Adapter.Local do
          :ok <- maybe_chmod(path, mode) do
       :ok
     else
-      {:error, reason} -> {:error, convert_file_error(reason, path)}
+      {:error, reason} when is_atom(reason) -> {:error, convert_file_error(reason, path)}
+      {:error, %{__struct__: _} = error} -> {:error, error}
     end
   end
 

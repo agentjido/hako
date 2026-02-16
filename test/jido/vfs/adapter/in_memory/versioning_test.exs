@@ -36,15 +36,11 @@ defmodule Jido.VFS.Adapter.InMemory.VersioningTest do
 
       # Check format
       revision = List.first(revisions)
-      assert Map.has_key?(revision, :revision)
-      assert Map.has_key?(revision, :author_name)
-      assert Map.has_key?(revision, :author_email)
-      assert Map.has_key?(revision, :message)
-      assert Map.has_key?(revision, :timestamp)
+      assert %Jido.VFS.Revision{} = revision
 
       assert revision.author_name == "InMemory Adapter"
       assert revision.author_email == "inmemory@jido.vfs.local"
-      assert is_binary(revision.revision)
+      assert is_binary(revision.sha)
       assert %DateTime{} = revision.timestamp
     end
 
@@ -103,7 +99,8 @@ defmodule Jido.VFS.Adapter.InMemory.VersioningTest do
     test "returns error for full rollback (unsupported)", %{config: config} do
       {:ok, version_id} = InMemory.write_version(config, "test.txt", "content", [])
 
-      assert {:error, :unsupported} = Versioning.rollback(config, version_id)
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :rollback}} =
+               Versioning.rollback(config, version_id)
     end
 
     test "returns error for rollback of non-existent version", %{config: config} do

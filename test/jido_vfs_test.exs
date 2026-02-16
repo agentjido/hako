@@ -786,7 +786,8 @@ defmodule JidoVFSTest do
 
     test "stat/2 returns unsupported for adapters without implementation", %{test: _test} do
       # Use a mock adapter that doesn't implement stat
-      assert {:error, :unsupported} = Jido.VFS.stat({NonExistentAdapter, %{}}, "test.txt")
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :stat}} =
+               Jido.VFS.stat({NonExistentAdapter, %{}}, "test.txt")
     end
 
     test "access/3 works with high-level API", %{test: test} do

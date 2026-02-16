@@ -1,6 +1,6 @@
 defmodule Jido.VFS.Adapter.Git do
   @moduledoc """
-  Hako Adapter for Git repositories with versioning support.
+  Jido.VFS adapter for Git repositories with versioning support.
 
   This adapter provides filesystem operations backed by a Git repository,
   with automatic or manual commit modes for version control.
@@ -14,7 +14,7 @@ defmodule Jido.VFS.Adapter.Git do
       )
       
       Jido.VFS.write(filesystem, "file.txt", "content")
-      Hako.commit(filesystem, "Add new file")
+      Jido.VFS.commit(filesystem, "Add new file")
 
   ## Options
 
@@ -27,6 +27,7 @@ defmodule Jido.VFS.Adapter.Git do
   """
 
   alias Jido.VFS.Adapter.Local
+  alias Jido.VFS.Errors
   alias Jido.VFS.Revision
 
   defmodule Config do
@@ -52,7 +53,7 @@ defmodule Jido.VFS.Adapter.Git do
           }
 
     def default_commit_message(%{operation: op, path: path}) do
-      "Hako #{op} #{path} at #{DateTime.utc_now() |> DateTime.to_iso8601()}"
+      "Jido.VFS #{op} #{path} at #{DateTime.utc_now() |> DateTime.to_iso8601()}"
     end
   end
 
@@ -67,7 +68,7 @@ defmodule Jido.VFS.Adapter.Git do
     branch = Keyword.get(opts, :branch)
     author = Keyword.get(opts, :author, [])
     commit_message_fn = Keyword.get(opts, :commit_message, &Config.default_commit_message/1)
-    author_name = Keyword.get(author, :name, "Hako")
+    author_name = Keyword.get(author, :name, "Jido.VFS")
     author_email = Keyword.get(author, :email, "hako@localhost")
 
     # Ensure Git is available
@@ -179,7 +180,7 @@ defmodule Jido.VFS.Adapter.Git do
     opts = [cd: repo_path, stderr_to_stdout: true]
 
     opts =
-      if Application.get_env(:hako, :test_mode, false) do
+      if Application.get_env(:jido_vfs, :test_mode, false) do
         Keyword.put(opts, :env, [{"GIT_TEMPLATE_DIR", ""}])
       else
         opts
@@ -298,7 +299,7 @@ defmodule Jido.VFS.Adapter.Git do
   @impl Jido.VFS.Adapter
   def copy(_source_config, _source_path, _destination_config, _destination_path, _opts) do
     # Cross-adapter copy not supported for Git
-    {:error, :unsupported}
+    {:error, Errors.UnsupportedOperation.exception(operation: :copy_between, adapter: __MODULE__)}
   end
 
   @impl Jido.VFS.Adapter
@@ -344,7 +345,7 @@ defmodule Jido.VFS.Adapter.Git do
 
   @impl Jido.VFS.Adapter
   def clear(config) do
-    case Local.clear(config.local_config) do
+    case clear_repository_contents(config.repo_path) do
       :ok ->
         maybe_auto_commit(config, %{operation: :clear, path: "."})
 
@@ -371,6 +372,27 @@ defmodule Jido.VFS.Adapter.Git do
 
   @impl Jido.VFS.Adapter
   def starts_processes, do: false
+
+  defp clear_repository_contents(repo_path) do
+    with {:ok, entries} <- File.ls(repo_path) do
+      entries
+      |> Enum.reject(&(&1 == ".git"))
+      |> Enum.reduce_while(:ok, fn entry, :ok ->
+        path = Path.join(repo_path, entry)
+
+        case File.rm_rf(path) do
+          {:ok, _} ->
+            {:cont, :ok}
+
+          {:error, reason, _failed_path} ->
+            {:halt, {:error, Errors.to_error(reason)}}
+        end
+      end)
+    else
+      {:error, reason} ->
+        {:error, Errors.to_error(reason)}
+    end
+  end
 
   # Versioning behaviour implementation
 

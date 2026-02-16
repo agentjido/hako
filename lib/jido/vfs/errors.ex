@@ -1,6 +1,6 @@
 defmodule Jido.VFS.Errors do
   @moduledoc """
-  Error handling module for Hako filesystem operations.
+  Error handling module for Jido.VFS filesystem operations.
 
   Provides consistent error types and handling across all adapters.
   """

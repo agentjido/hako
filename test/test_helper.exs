@@ -3,9 +3,9 @@ minio_available? =
   try do
     # Capture stdio to suppress minio's JSON output
     ExUnit.CaptureIO.capture_io(fn ->
-      {:ok, _} = HakoTest.Minio.start_link()
-      :ok = HakoTest.Minio.wait_for_ready()
-      HakoTest.Minio.initialize_bucket("default")
+      {:ok, _} = JidoVfsTest.Minio.start_link()
+      :ok = JidoVfsTest.Minio.wait_for_ready()
+      JidoVfsTest.Minio.initialize_bucket("default")
     end)
 
     true
@@ -19,6 +19,10 @@ git_available? =
     {name, 0} when byte_size(name) > 0 -> true
     _ -> false
   end
+
+# Expose probe results to test modules for deterministic compile-time tagging.
+Application.put_env(:jido_vfs, :minio_available, minio_available?)
+Application.put_env(:jido_vfs, :git_available, git_available?)
 
 # Build exclusion list
 excludes = [:integration]

@@ -15,7 +15,7 @@ defmodule Jido.VFS.Adapter.GitTest do
 
     # Ensure we have git available
     case System.find_executable("git") do
-      nil -> {:skip, "Git not available"}
+      nil -> {:ok, skip: "Git not available"}
       _ -> :ok
     end
 
@@ -34,7 +34,7 @@ defmodule Jido.VFS.Adapter.GitTest do
       assert config.repo_path == Path.expand(repo_path)
       # depends on git version/config
       assert config.branch in ["main", "master"]
-      assert config.author_name == "Hako"
+      assert config.author_name == "Jido.VFS"
       assert config.author_email == "hako@localhost"
       refute config.auto_commit?
     end
@@ -172,7 +172,7 @@ defmodule Jido.VFS.Adapter.GitTest do
       commits = String.split(log_output, "\n", trim: true)
       # Initial + our write commit
       assert length(commits) == 2
-      assert String.contains?(hd(commits), "Hako write test.txt")
+      assert String.contains?(hd(commits), "Jido.VFS write test.txt")
     end
   end
 
@@ -292,22 +292,30 @@ defmodule Jido.VFS.Adapter.GitTest do
   describe "unsupported operations on non-Git adapters" do
     test "commit returns unsupported for Local adapter" do
       local_fs = Jido.VFS.Adapter.Local.configure(prefix: @tmp_dir)
-      assert {:error, :unsupported} = Jido.VFS.commit(local_fs)
+
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :commit}} =
+               Jido.VFS.commit(local_fs)
     end
 
     test "revisions returns unsupported for Local adapter" do
       local_fs = Jido.VFS.Adapter.Local.configure(prefix: @tmp_dir)
-      assert {:error, :unsupported} = Jido.VFS.revisions(local_fs)
+
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :revisions}} =
+               Jido.VFS.revisions(local_fs)
     end
 
     test "read_revision returns unsupported for Local adapter" do
       local_fs = Jido.VFS.Adapter.Local.configure(prefix: @tmp_dir)
-      assert {:error, :unsupported} = Jido.VFS.read_revision(local_fs, "file.txt", "abc123")
+
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :read_revision}} =
+               Jido.VFS.read_revision(local_fs, "file.txt", "abc123")
     end
 
     test "rollback returns unsupported for Local adapter" do
       local_fs = Jido.VFS.Adapter.Local.configure(prefix: @tmp_dir)
-      assert {:error, :unsupported} = Jido.VFS.rollback(local_fs, "abc123")
+
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :rollback}} =
+               Jido.VFS.rollback(local_fs, "abc123")
     end
   end
 

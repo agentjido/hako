@@ -1,6 +1,6 @@
 defmodule Jido.VFS.Adapter.ETS do
   @moduledoc """
-  Hako Adapter using ETS (Erlang Term Storage) for in-memory storage.
+  Jido.VFS adapter using ETS (Erlang Term Storage) for in-memory storage.
 
   ## Direct usage
 
@@ -100,17 +100,13 @@ defmodule Jido.VFS.Adapter.ETS do
         :ets.new(config.name, [:set, :protected])
       end
 
-    # Create versions table for versioning support
-    versions_table_name = String.to_atom("#{config.name}_versions")
-
+    # In eternal mode, keep versions in the eternal table as tagged keys so they
+    # survive adapter restarts without creating dynamic atoms.
     versions_table =
       if config.eternal do
-        case Eternal.start_link(versions_table_name, [:set, :protected]) do
-          {:ok, _pid} -> versions_table_name
-          {:error, {:already_started, _pid}} -> versions_table_name
-        end
+        table
       else
-        :ets.new(versions_table_name, [:set, :protected])
+        :ets.new(:jido_vfs_ets_versions, [:set, :protected])
       end
 
     {:ok, %Config{config | table: table} |> Map.put(:versions_table, versions_table)}
@@ -368,7 +364,8 @@ defmodule Jido.VFS.Adapter.ETS do
     timestamp = System.system_time(:second)
 
     # Store the version
-    version_key = {path, version_id}
+    version_key = version_entry_key(path, version_id)
+    version_index_key = version_index_key(path)
 
     version_data =
       {IO.iodata_to_binary(contents), %{visibility: visibility, timestamp: timestamp}}
@@ -382,13 +379,13 @@ defmodule Jido.VFS.Adapter.ETS do
 
     # Store version metadata for the path
     path_versions =
-      case :ets.lookup(versions_table, path) do
-        [{^path, existing_versions}] -> existing_versions
+      case :ets.lookup(versions_table, version_index_key) do
+        [{^version_index_key, existing_versions}] -> existing_versions
         [] -> []
       end
 
     version_info = %{version_id: version_id, timestamp: timestamp}
-    :ets.insert(versions_table, {path, [version_info | path_versions]})
+    :ets.insert(versions_table, {version_index_key, [version_info | path_versions]})
 
     {:reply, {:ok, version_id}, state}
   end
@@ -399,8 +396,8 @@ defmodule Jido.VFS.Adapter.ETS do
         %Config{versions_table: versions_table} = state
       ) do
     reply =
-      case :ets.lookup(versions_table, {path, version_id}) do
-        [{{^path, ^version_id}, {binary, _meta}}] when is_binary(binary) -> {:ok, binary}
+      case :ets.lookup(versions_table, version_entry_key(path, version_id)) do
+        [{{:version, ^path, ^version_id}, {binary, _meta}}] when is_binary(binary) -> {:ok, binary}
         [] -> {:error, Errors.FileNotFound.exception(file_path: "#{path}@#{version_id}")}
       end
 
@@ -409,8 +406,8 @@ defmodule Jido.VFS.Adapter.ETS do
 
   def handle_call({:list_versions, path}, _from, %Config{versions_table: versions_table} = state) do
     reply =
-      case :ets.lookup(versions_table, path) do
-        [{^path, version_list}] -> {:ok, Enum.reverse(version_list)}
+      case :ets.lookup(versions_table, version_index_key(path)) do
+        [{_, version_list}] -> {:ok, Enum.reverse(version_list)}
         [] -> {:ok, []}
       end
 
@@ -423,13 +420,15 @@ defmodule Jido.VFS.Adapter.ETS do
         %Config{versions_table: versions_table} = state
       ) do
     # Remove the version data
-    :ets.delete(versions_table, {path, version_id})
+    :ets.delete(versions_table, version_entry_key(path, version_id))
 
     # Remove from version list for the path
-    case :ets.lookup(versions_table, path) do
-      [{^path, version_list}] ->
+    version_index_key = version_index_key(path)
+
+    case :ets.lookup(versions_table, version_index_key) do
+      [{^version_index_key, version_list}] ->
         updated_versions = Enum.reject(version_list, &(&1.version_id == version_id))
-        :ets.insert(versions_table, {path, updated_versions})
+        :ets.insert(versions_table, {version_index_key, updated_versions})
 
       [] ->
         :ok
@@ -444,9 +443,9 @@ defmodule Jido.VFS.Adapter.ETS do
         %Config{versions_table: versions_table} = state
       ) do
     reply =
-      case :ets.lookup(versions_table, path) do
-        [{^path, [latest | _]}] -> {:ok, latest.version_id}
-        [{^path, []}] -> {:error, Errors.FileNotFound.exception(file_path: path)}
+      case :ets.lookup(versions_table, version_index_key(path)) do
+        [{_, [latest | _]}] -> {:ok, latest.version_id}
+        [{_, []}] -> {:error, Errors.FileNotFound.exception(file_path: path)}
         [] -> {:error, Errors.FileNotFound.exception(file_path: path)}
       end
 
@@ -459,8 +458,8 @@ defmodule Jido.VFS.Adapter.ETS do
         %Config{table: table, versions_table: versions_table} = state
       ) do
     reply =
-      case :ets.lookup(versions_table, {path, version_id}) do
-        [{{^path, ^version_id}, {binary, meta}}] when is_binary(binary) ->
+      case :ets.lookup(versions_table, version_entry_key(path, version_id)) do
+        [{{:version, ^path, ^version_id}, {binary, meta}}] when is_binary(binary) ->
           # Restore the file to current
           file = {binary, %{visibility: meta.visibility}}
           :ets.insert(table, {path, file})
@@ -515,28 +514,32 @@ defmodule Jido.VFS.Adapter.ETS do
     normalized_path = normalize_path(path)
 
     :ets.foldl(
-      fn {file_path, {content, meta}}, acc ->
-        case check_path_in_directory(file_path, normalized_path) do
-          {:direct_child, name} when name not in [".", ".."] ->
-            if Map.has_key?(acc, name) do
-              if match?(%Jido.VFS.Stat.Dir{}, acc[name]) do
-                acc
-              else
-                case content do
-                  map when is_map(map) ->
-                    Map.put(acc, name, create_stat_struct(name, content, meta))
+      fn
+        {file_path, {content, meta}}, acc when is_binary(file_path) ->
+          case check_path_in_directory(file_path, normalized_path) do
+            {:direct_child, name} when name not in [".", ".."] ->
+              if Map.has_key?(acc, name) do
+                if match?(%Jido.VFS.Stat.Dir{}, acc[name]) do
+                  acc
+                else
+                  case content do
+                    map when is_map(map) ->
+                      Map.put(acc, name, create_stat_struct(name, content, meta))
 
-                  _ ->
-                    acc
+                    _ ->
+                      acc
+                  end
                 end
+              else
+                Map.put(acc, name, create_stat_struct(name, content, meta))
               end
-            else
-              Map.put(acc, name, create_stat_struct(name, content, meta))
-            end
 
-          _ ->
-            acc
-        end
+            _ ->
+              acc
+          end
+
+        _other, acc ->
+          acc
       end,
       %{},
       table
@@ -624,8 +627,12 @@ defmodule Jido.VFS.Adapter.ETS do
 
   defp directory_has_contents?(table, path) do
     :ets.foldl(
-      fn {key, _value}, acc ->
-        acc or (String.starts_with?(key, path <> "/") and key != path)
+      fn
+        {key, _value}, acc when is_binary(key) ->
+          acc or (String.starts_with?(key, path <> "/") and key != path)
+
+        _other, acc ->
+          acc
       end,
       false,
       table
@@ -634,12 +641,16 @@ defmodule Jido.VFS.Adapter.ETS do
 
   defp delete_directory_recursive(table, path) do
     :ets.foldl(
-      fn {key, _}, :ok ->
-        if key == path or String.starts_with?(key, path <> "/") do
-          :ets.delete(table, key)
-        end
+      fn
+        {key, _}, :ok when is_binary(key) ->
+          if key == path or String.starts_with?(key, path <> "/") do
+            :ets.delete(table, key)
+          end
 
-        :ok
+          :ok
+
+        _other, :ok ->
+          :ok
       end,
       :ok,
       table
@@ -660,12 +671,16 @@ defmodule Jido.VFS.Adapter.ETS do
 
   defp update_children_visibility(table, path, visibility, true) do
     :ets.foldl(
-      fn {key, {content, sub_meta}}, :ok ->
-        if String.starts_with?(key, path <> "/") do
-          :ets.insert(table, {key, {content, Map.put(sub_meta, :visibility, visibility)}})
-        end
+      fn
+        {key, {content, sub_meta}}, :ok when is_binary(key) ->
+          if String.starts_with?(key, path <> "/") do
+            :ets.insert(table, {key, {content, Map.put(sub_meta, :visibility, visibility)}})
+          end
 
-        :ok
+          :ok
+
+        _other, :ok ->
+          :ok
       end,
       :ok,
       table
@@ -701,6 +716,9 @@ defmodule Jido.VFS.Adapter.ETS do
         )
     end
   end
+
+  defp version_entry_key(path, version_id), do: {:version, path, version_id}
+  defp version_index_key(path), do: {:versions, path}
 
   # Versioning adapter implementation
 

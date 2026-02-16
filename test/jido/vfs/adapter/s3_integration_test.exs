@@ -20,18 +20,26 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
 
   @moduletag :integration
   @moduletag :s3
+  @minio_available Application.compile_env(:jido_vfs, :minio_available, false)
 
-  setup do
-    config = HakoTest.Minio.config()
-    HakoTest.Minio.clean_bucket("default")
-    HakoTest.Minio.recreate_bucket("default")
+  if not @minio_available do
+    @moduletag skip: "Minio not available"
+  end
+
+  setup_all do
+    {:ok, raw_config: JidoVfsTest.Minio.config()}
+  end
+
+  setup %{raw_config: config} do
+    JidoVfsTest.Minio.clean_bucket("default")
+    JidoVfsTest.Minio.recreate_bucket("default")
     Jido.VFS.Adapter.S3.reset_visibility_store()
 
     filesystem = Jido.VFS.Adapter.S3.configure(config: config, bucket: "default")
     {_, s3_config} = filesystem
 
     on_exit(fn ->
-      HakoTest.Minio.clean_bucket("default")
+      JidoVfsTest.Minio.clean_bucket("default")
       Jido.VFS.Adapter.S3.reset_visibility_store()
     end)
 
@@ -289,7 +297,7 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
 
     test "create directory requires trailing slash", %{filesystem: fs} do
       # S3 adapter requires explicit trailing slash for directory paths
-      # Without trailing slash, Hako returns NotDirectory error
+      # Without trailing slash, Jido.VFS returns NotDirectory error
       assert {:error, %Jido.VFS.Errors.NotDirectory{}} = Jido.VFS.create_directory(fs, "new_dir2")
     end
 
@@ -312,6 +320,17 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
       assert :ok = Jido.VFS.delete_directory(fs, "to_delete/", recursive: true)
       assert {:ok, :missing} = Jido.VFS.file_exists(fs, "to_delete/a/b/file.txt")
       assert {:ok, :missing} = Jido.VFS.file_exists(fs, "to_delete/file2.txt")
+    end
+
+    @tag timeout: 180_000
+    test "recursive delete handles paginated object listings (>1000 objects)", %{filesystem: fs} do
+      for i <- 1..1_050 do
+        :ok = Jido.VFS.write(fs, "bulk_delete/item_#{i}.txt", "#{i}")
+      end
+
+      assert :ok = Jido.VFS.delete_directory(fs, "bulk_delete/", recursive: true)
+      assert {:ok, :missing} = Jido.VFS.file_exists(fs, "bulk_delete/item_1.txt")
+      assert {:ok, :missing} = Jido.VFS.file_exists(fs, "bulk_delete/item_1050.txt")
     end
 
     test "list contents returns files and directories", %{filesystem: fs} do
@@ -453,6 +472,24 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
       result = collector_fun.(nil, :halt)
       assert result == :ok
     end
+
+    test "halting a multipart upload aborts and leaves no object", %{
+      filesystem: fs,
+      raw_config: raw_config,
+      bucket: bucket
+    } do
+      {:ok, stream} = Jido.VFS.write_stream(fs, "halt_cleanup.bin")
+      {state, collector_fun} = Collectable.into(stream)
+
+      next_state = collector_fun.(state, {:cont, :crypto.strong_rand_bytes(1_024 * 1_024)})
+      assert :ok = collector_fun.(next_state, :halt)
+
+      assert {:error, %Jido.VFS.Errors.FileNotFound{}} = Jido.VFS.read(fs, "halt_cleanup.bin")
+
+      {:ok, %{body: body}} = ExAws.S3.list_multipart_uploads(bucket) |> ExAws.request(raw_config)
+      uploads = Map.get(body, :uploads, [])
+      refute Enum.any?(uploads, fn upload -> upload.key == "halt_cleanup.bin" end)
+    end
   end
 
   describe "stream operations - read" do
@@ -592,11 +629,11 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
 
   describe "cross-bucket operations" do
     setup %{raw_config: config} do
-      HakoTest.Minio.clean_bucket("secondary")
-      HakoTest.Minio.recreate_bucket("secondary")
+      JidoVfsTest.Minio.clean_bucket("secondary")
+      JidoVfsTest.Minio.recreate_bucket("secondary")
 
       on_exit(fn ->
-        HakoTest.Minio.clean_bucket("secondary")
+        JidoVfsTest.Minio.clean_bucket("secondary")
       end)
 
       {:ok, config_b: config}
@@ -731,9 +768,7 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
       assert {:ok, "content B"} = Jido.VFS.read(fs_b, "file.txt")
     end
 
-    test "clear affects all files in bucket (S3 adapter behavior)", %{raw_config: config} do
-      # Note: The S3 adapter's clear() method clears ALL objects in the bucket,
-      # not just those under the configured prefix. This is current behavior.
+    test "clear only affects files in configured prefix", %{raw_config: config} do
       fs_a = Jido.VFS.Adapter.S3.configure(config: config, bucket: "default", prefix: "clear_a/")
       fs_b = Jido.VFS.Adapter.S3.configure(config: config, bucket: "default", prefix: "clear_b/")
 
@@ -742,10 +777,8 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
 
       :ok = Jido.VFS.clear(fs_a)
 
-      # Current behavior: clear() clears the entire bucket
       assert {:error, %Jido.VFS.Errors.FileNotFound{}} = Jido.VFS.read(fs_a, "file.txt")
-      # Note: This also clears fs_b's files since they're in the same bucket
-      assert {:error, %Jido.VFS.Errors.FileNotFound{}} = Jido.VFS.read(fs_b, "file.txt")
+      assert {:ok, "content B"} = Jido.VFS.read(fs_b, "file.txt")
     end
 
     test "nested prefix paths", %{raw_config: config} do
@@ -952,20 +985,19 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
       assert {:ok, ^content} = Jido.VFS.read(fs, "binary_move_dest.bin")
     end
 
-    test "list contents with many files (pagination behavior)", %{filesystem: fs} do
-      for i <- 1..100 do
+    @tag timeout: 180_000
+    test "list contents with more than 1000 files (pagination behavior)", %{filesystem: fs} do
+      for i <- 1..1_050 do
         :ok =
           Jido.VFS.write(
             fs,
-            "many/file_#{String.pad_leading(Integer.to_string(i), 3, "0")}.txt",
+            "many/file_#{String.pad_leading(Integer.to_string(i), 4, "0")}.txt",
             "#{i}"
           )
       end
 
       {:ok, contents} = Jido.VFS.list_contents(fs, "many/")
-      # S3 list_objects_v2 by default returns up to 1000 objects per request
-      # All 100 files should be returned
-      assert length(contents) == 100
+      assert length(contents) == 1_050
     end
 
     test "operations on root path variations", %{filesystem: fs} do

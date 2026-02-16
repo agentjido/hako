@@ -1,6 +1,6 @@
 defmodule Jido.VFS.Adapter.Versioning do
   @moduledoc """
-  Behaviour for versioning operations in Hako adapters.
+  Behaviour for versioning operations in Jido.VFS adapters.
 
   This behaviour defines a consistent interface for version control operations
   that can be implemented by adapters that support versioning functionality.
@@ -36,13 +36,7 @@ defmodule Jido.VFS.Adapter.Versioning do
 
   @type config :: struct()
   @type revision :: any()
-  @type revision_info :: %{
-          revision: revision(),
-          author_name: String.t(),
-          author_email: String.t(),
-          message: String.t(),
-          timestamp: DateTime.t()
-        }
+  @type revision_info :: Jido.VFS.Revision.t()
 
   @doc """
   Commit staged changes with an optional message.

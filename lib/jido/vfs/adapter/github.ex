@@ -1,6 +1,6 @@
 defmodule Jido.VFS.Adapter.GitHub do
   @moduledoc """
-  A GitHub virtual filesystem adapter for Hako.
+  A GitHub virtual filesystem adapter for Jido.VFS.
 
   This adapter allows you to interact with GitHub repositories as if they were
   a local filesystem, using the GitHub API through the `tentacat` package.
@@ -19,7 +19,7 @@ defmodule Jido.VFS.Adapter.GitHub do
   You can also configure GitHub credentials in your application config:
 
       # config/config.exs
-      config :hako, :github,
+      config :jido_vfs, :github,
         access_token: "github_pat_token",
         name: "Your Name",
         email: "your@email.com"
@@ -52,6 +52,7 @@ defmodule Jido.VFS.Adapter.GitHub do
 
   @behaviour Jido.VFS.Adapter
 
+  alias Jido.VFS.Errors
   alias Jido.VFS.Stat.File
   alias Jido.VFS.Stat.Dir
 
@@ -112,14 +113,23 @@ defmodule Jido.VFS.Adapter.GitHub do
   def read(%__MODULE__{} = config, path) do
     case Tentacat.Contents.find_in(config.client, config.owner, config.repo, path, config.ref) do
       {200, %{"content" => content, "encoding" => "base64"}, _response} ->
-        decoded_content = Base.decode64!(content)
-        {:ok, decoded_content}
+        case Base.decode64(content) do
+          {:ok, decoded_content} ->
+            {:ok, decoded_content}
+
+          :error ->
+            {:error,
+             Errors.AdapterError.exception(
+               adapter: __MODULE__,
+               reason: %{status: 200, body: :invalid_base64}
+             )}
+        end
 
       {404, _body, _response} ->
-        {:error, :enoent}
+        {:error, Errors.FileNotFound.exception(file_path: path)}
 
       {status, body, _response} ->
-        {:error, "GitHub API error: #{status} - #{inspect(body)}"}
+        {:error, api_error(status, body)}
     end
   end
 
@@ -138,7 +148,7 @@ defmodule Jido.VFS.Adapter.GitHub do
 
     params = %{
       message: message,
-      content: Base.encode64(content),
+      content: Base.encode64(IO.iodata_to_binary(content)),
       committer: committer,
       author: author
     }
@@ -154,13 +164,13 @@ defmodule Jido.VFS.Adapter.GitHub do
         :ok
 
       {status, body, _response} ->
-        {:error, "GitHub API error: #{status} - #{inspect(body)}"}
+        {:error, api_error(status, body)}
     end
   end
 
   @impl true
   def delete(%__MODULE__{} = config, path) do
-    message = "Delete #{path} via Hako"
+    message = "Delete #{path} via Jido.VFS"
     committer = config.commit_info.committer
     author = config.commit_info.author
 
@@ -179,14 +189,14 @@ defmodule Jido.VFS.Adapter.GitHub do
             :ok
 
           {status, body, _response} ->
-            {:error, "GitHub API error: #{status} - #{inspect(body)}"}
+            {:error, api_error(status, body)}
         end
 
       {404, _body, _response} ->
-        {:error, :enoent}
+        {:error, Errors.FileNotFound.exception(file_path: path)}
 
       {status, body, _response} ->
-        {:error, "GitHub API error: #{status} - #{inspect(body)}"}
+        {:error, api_error(status, body)}
     end
   end
 
@@ -232,10 +242,10 @@ defmodule Jido.VFS.Adapter.GitHub do
         {:ok, [stat]}
 
       {404, _body, _response} ->
-        {:error, :enoent}
+        {:error, Errors.DirectoryNotFound.exception(dir_path: normalized_path)}
 
       {status, body, _response} ->
-        {:error, "GitHub API error: #{status} - #{inspect(body)}"}
+        {:error, api_error(status, body)}
     end
   end
 
@@ -245,20 +255,20 @@ defmodule Jido.VFS.Adapter.GitHub do
       {200, %{"type" => "file"}, _response} -> {:ok, :exists}
       {200, %{"type" => "dir"}, _response} -> {:ok, :missing}
       {404, _body, _response} -> {:ok, :missing}
-      {status, body, _response} -> {:error, "GitHub API error: #{status} - #{inspect(body)}"}
+      {status, body, _response} -> {:error, api_error(status, body)}
     end
   end
 
   # GitHub doesn't support creating empty directories
   @impl true
   def create_directory(%__MODULE__{}, _path, _opts) do
-    {:error, "GitHub does not support empty directories"}
+    unsupported(:create_directory)
   end
 
   # GitHub doesn't support deleting directories directly
   @impl true
   def delete_directory(%__MODULE__{}, _path, _opts) do
-    {:error, "GitHub does not support directory deletion via API"}
+    unsupported(:delete_directory)
   end
 
   # Add required behavior functions
@@ -267,38 +277,38 @@ defmodule Jido.VFS.Adapter.GitHub do
 
   @impl true
   def read_stream(%__MODULE__{}, _path, _opts) do
-    {:error, "Streaming not supported for GitHub adapter"}
+    unsupported(:read_stream)
   end
 
   @impl true
   def write_stream(%__MODULE__{}, _path, _opts) do
-    {:error, "Streaming not supported for GitHub adapter"}
+    unsupported(:write_stream)
   end
 
   @impl true
   def clear(%__MODULE__{}) do
-    {:error, "Clear operation not supported for GitHub adapter"}
+    unsupported(:clear)
   end
 
   @impl true
   def set_visibility(%__MODULE__{}, _path, _visibility) do
-    {:error, "Visibility control not supported for GitHub adapter"}
+    unsupported(:set_visibility)
   end
 
   @impl true
   def visibility(%__MODULE__{}, _path) do
-    {:error, "Visibility control not supported for GitHub adapter"}
+    unsupported(:visibility)
   end
 
   # Need to implement copy/5 for cross-adapter copying
   @impl true
   def copy(_source_config, _source, _dest_config, _dest, _opts) do
-    {:error, "Cross-adapter copying not supported for GitHub adapter"}
+    unsupported(:copy_between)
   end
 
   # Get authentication from application config
   defp get_config_auth do
-    case Application.get_env(:hako, :github, []) do
+    case Application.get_env(:jido_vfs, :github, []) do
       config when is_list(config) ->
         case Keyword.get(config, :access_token) do
           nil -> nil
@@ -312,15 +322,23 @@ defmodule Jido.VFS.Adapter.GitHub do
 
   # Get commit info from application config
   defp get_config_commit_info do
-    config = Application.get_env(:hako, :github, [])
-    name = Keyword.get(config, :name, "Hako")
+    config = Application.get_env(:jido_vfs, :github, [])
+    name = Keyword.get(config, :name, "Jido.VFS")
     email = Keyword.get(config, :email, "hako@example.com")
 
     %{
-      message: "Update via Hako",
+      message: "Update via Jido.VFS",
       committer: %{name: name, email: email},
       author: %{name: name, email: email}
     }
+  end
+
+  defp unsupported(operation) do
+    {:error, Errors.UnsupportedOperation.exception(operation: operation, adapter: __MODULE__)}
+  end
+
+  defp api_error(status, body) do
+    Errors.AdapterError.exception(adapter: __MODULE__, reason: %{status: status, body: body})
   end
 
   # Convert GitHub API content response to Jido.VFS.Stat

@@ -68,6 +68,43 @@ defmodule Jido.VFS.Adapter.GitHubTest do
 
       assert config.commit_info == commit_info
     end
+
+    test "uses :jido_vfs config namespace and ignores :hako" do
+      previous_jido = Application.get_env(:jido_vfs, :github)
+      previous_hako = Application.get_env(:hako, :github)
+
+      on_exit(fn ->
+        if previous_jido do
+          Application.put_env(:jido_vfs, :github, previous_jido)
+        else
+          Application.delete_env(:jido_vfs, :github)
+        end
+
+        if previous_hako do
+          Application.put_env(:hako, :github, previous_hako)
+        else
+          Application.delete_env(:hako, :github)
+        end
+      end)
+
+      Application.put_env(:jido_vfs, :github,
+        access_token: "jido_token",
+        name: "Jido Name",
+        email: "jido@example.com"
+      )
+
+      Application.put_env(:hako, :github,
+        access_token: "legacy_token",
+        name: "Legacy Name",
+        email: "legacy@example.com"
+      )
+
+      {_module, config} = GitHub.configure(owner: "octocat", repo: "Hello-World")
+
+      assert config.client.auth == %{access_token: "jido_token"}
+      assert config.commit_info.author == %{name: "Jido Name", email: "jido@example.com"}
+      assert config.commit_info.committer == %{name: "Jido Name", email: "jido@example.com"}
+    end
   end
 
   describe "read/2" do
@@ -92,7 +129,8 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {404, %{"message" => "Not Found"}, %{}}
       end)
 
-      assert {:error, :enoent} = GitHub.read(config, "missing.txt")
+      assert {:error, %Jido.VFS.Errors.FileNotFound{file_path: "missing.txt"}} =
+               GitHub.read(config, "missing.txt")
     end
 
     test "returns error for API errors", %{config: config} do
@@ -100,7 +138,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
-      assert {:error, "GitHub API error: 500 - " <> _} = GitHub.read(config, "error.txt")
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} = GitHub.read(config, "error.txt")
     end
 
     test "handles malformed base64 content", %{config: config} do
@@ -108,9 +146,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {200, %{"content" => "invalid-base64!", "encoding" => "base64"}, %{}}
       end)
 
-      assert_raise ArgumentError, fn ->
-        GitHub.read(config, "malformed.txt")
-      end
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} = GitHub.read(config, "malformed.txt")
     end
   end
 
@@ -204,8 +240,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {422, %{"message" => "Validation Failed"}, %{}}
       end)
 
-      assert {:error, "GitHub API error: 422 - " <> _} =
-               GitHub.write(config, "fail.txt", content, [])
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} = GitHub.write(config, "fail.txt", content, [])
     end
 
     test "handles file lookup errors gracefully by treating as new file", %{config: config} do
@@ -244,7 +279,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
       # Delete file
       expect(Tentacat.Contents, :remove, fn _client, "octocat", "Hello-World", "delete_me.txt", params ->
         assert params.sha == file_sha
-        assert params.message == "Delete delete_me.txt via Hako"
+        assert params.message == "Delete delete_me.txt via Jido.VFS"
 
         {200, %{"commit" => %{"sha" => "ghi789"}}, %{}}
       end)
@@ -257,7 +292,8 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {404, %{"message" => "Not Found"}, %{}}
       end)
 
-      assert {:error, :enoent} = GitHub.delete(config, "missing.txt")
+      assert {:error, %Jido.VFS.Errors.FileNotFound{file_path: "missing.txt"}} =
+               GitHub.delete(config, "missing.txt")
     end
 
     test "returns error for delete API failures", %{config: config} do
@@ -273,7 +309,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {422, %{"message" => "Validation Failed"}, %{}}
       end)
 
-      assert {:error, "GitHub API error: 422 - " <> _} = GitHub.delete(config, "error_delete.txt")
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} = GitHub.delete(config, "error_delete.txt")
     end
 
     test "returns error when file lookup for delete fails", %{config: config} do
@@ -281,7 +317,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
-      assert {:error, "GitHub API error: 500 - " <> _} = GitHub.delete(config, "lookup_error.txt")
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} = GitHub.delete(config, "lookup_error.txt")
     end
   end
 
@@ -337,7 +373,8 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {404, %{"message" => "Not Found"}, %{}}
       end)
 
-      assert {:error, :enoent} = GitHub.list_contents(config, "missing")
+      assert {:error, %Jido.VFS.Errors.DirectoryNotFound{dir_path: "missing"}} =
+               GitHub.list_contents(config, "missing")
     end
 
     test "returns error for API failures", %{config: config} do
@@ -345,7 +382,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
-      assert {:error, "GitHub API error: 500 - " <> _} = GitHub.list_contents(config, "error_dir")
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} = GitHub.list_contents(config, "error_dir")
     end
   end
 
@@ -384,7 +421,7 @@ defmodule Jido.VFS.Adapter.GitHubTest do
         {500, %{"message" => "Server Error"}, %{}}
       end)
 
-      assert {:error, "GitHub API error: 500 - " <> _} = GitHub.file_exists(config, "error.txt")
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} = GitHub.file_exists(config, "error.txt")
     end
   end
 
@@ -488,12 +525,12 @@ defmodule Jido.VFS.Adapter.GitHubTest do
     end
 
     test "create_directory returns error", %{config: config} do
-      assert {:error, "GitHub does not support empty directories"} =
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :create_directory}} =
                GitHub.create_directory(config, "new_dir", [])
     end
 
     test "delete_directory returns error", %{config: config} do
-      assert {:error, "GitHub does not support directory deletion via API"} =
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :delete_directory}} =
                GitHub.delete_directory(config, "some_dir", [])
     end
   end
