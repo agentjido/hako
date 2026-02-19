@@ -67,10 +67,10 @@ defmodule Jido.VFS.MixProject do
       {:sweet_xml, "~> 0.6"},
       {:jason, "~> 1.0"},
       {:eternal, "~> 1.2.2"},
-      {:splode, "~> 0.2.9"},
+      {:splode, "~> 0.2.9 or ~> 0.3.0"},
       {:git_cli, "~> 0.3.0"},
       {:tentacat, "~> 2.0"},
-      {:sprites, git: "https://github.com/superfly/sprites-ex.git", optional: true},
+      {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", optional: true},
 
       # Dev/Test dependencies
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
