@@ -44,6 +44,60 @@ defmodule Jido.VFS do
   defp convert_path_error(:enotdir, path), do: Errors.NotDirectory.exception(not_dir_path: path)
 
   @doc """
+  Safely configure an adapter and normalize configure-time failures into typed errors.
+  """
+  @spec safe_configure(adapter(), keyword()) :: {:ok, filesystem()} | {:error, term()}
+  def safe_configure(adapter, opts \\ [])
+
+  def safe_configure(adapter, opts) when is_atom(adapter) and is_list(opts) do
+    if function_exported?(adapter, :configure, 1) do
+      case normalize_adapter_call(fn -> adapter.configure(opts) end) do
+        {configured_adapter, _config} = filesystem
+        when is_atom(configured_adapter) and configured_adapter not in [:ok, :error] ->
+          {:ok, filesystem}
+
+        {:error, %Errors.Unknown.Unknown{error: reason}} ->
+          {:error, Errors.AdapterError.exception(adapter: adapter, reason: reason)}
+
+        {:error, reason} ->
+          if jido_vfs_error?(reason) do
+            {:error, reason}
+          else
+            {:error, Errors.AdapterError.exception(adapter: adapter, reason: reason)}
+          end
+
+        other ->
+          {:error,
+           Errors.AdapterError.exception(
+             adapter: adapter,
+             reason: %{operation: :configure, reason: {:invalid_config_result, other}}
+           )}
+      end
+    else
+      {:error, Errors.UnsupportedOperation.exception(operation: :configure, adapter: adapter)}
+    end
+  end
+
+  def safe_configure(adapter, _opts) do
+    {:error,
+     Errors.AdapterError.exception(
+       adapter: adapter,
+       reason: %{operation: :configure, reason: :invalid_adapter_or_options}
+     )}
+  end
+
+  @doc """
+  Configure an adapter, raising when configuration fails.
+  """
+  @spec configure!(adapter(), keyword()) :: filesystem()
+  def configure!(adapter, opts \\ []) do
+    case safe_configure(adapter, opts) do
+      {:ok, filesystem} -> filesystem
+      {:error, error} -> raise error
+    end
+  end
+
+  @doc """
   Returns whether a filesystem supports a specific operation.
   """
   @spec supports?(filesystem, operation()) :: boolean()
@@ -88,22 +142,18 @@ defmodule Jido.VFS do
 
   defp supports_adapter?(_adapter, _operation), do: false
 
-  defp adapter_unsupported_operations(Jido.VFS.Adapter.GitHub) do
-    [
-      :read_stream,
-      :write_stream,
-      :clear,
-      :set_visibility,
-      :visibility,
-      :create_directory,
-      :delete_directory,
-      :copy_between
-    ]
+  defp adapter_unsupported_operations(adapter) do
+    if function_exported?(adapter, :unsupported_operations, 0) do
+      case adapter.unsupported_operations() do
+        operations when is_list(operations) -> operations
+        _ -> []
+      end
+    else
+      []
+    end
+  rescue
+    _ -> []
   end
-
-  defp adapter_unsupported_operations(Jido.VFS.Adapter.Git), do: [:copy_between]
-  defp adapter_unsupported_operations(Jido.VFS.Adapter.InMemory), do: [:copy_between]
-  defp adapter_unsupported_operations(_adapter), do: []
 
   defp supports_versioning_operation?(adapter, operation, arity) do
     with versioning_module when not is_nil(versioning_module) <- get_versioning_module(adapter),
@@ -1088,12 +1138,20 @@ defmodule Jido.VFS do
 
   defp normalize_revision_timestamp(_), do: DateTime.utc_now()
 
-  # Helper function to map adapters to their versioning modules
   @spec get_versioning_module(module()) :: module() | nil
-  defp get_versioning_module(Jido.VFS.Adapter.Git), do: Jido.VFS.Adapter.Git
-  defp get_versioning_module(Jido.VFS.Adapter.ETS), do: Jido.VFS.Adapter.ETS.Versioning
-  defp get_versioning_module(Jido.VFS.Adapter.InMemory), do: Jido.VFS.Adapter.InMemory.Versioning
-  defp get_versioning_module(Jido.VFS.Adapter.Sprite), do: Jido.VFS.Adapter.Sprite.Versioning
+  defp get_versioning_module(adapter) when is_atom(adapter) do
+    if function_exported?(adapter, :versioning_module, 0) do
+      case adapter.versioning_module() do
+        module when is_atom(module) -> module
+        _ -> nil
+      end
+    else
+      nil
+    end
+  rescue
+    _ -> nil
+  end
+
   defp get_versioning_module(_), do: nil
 
   @doc """

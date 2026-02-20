@@ -7,9 +7,12 @@ defmodule Jido.VFS.Adapter do
   @type stream_opts :: keyword
   @type directory_delete_opts :: keyword
   @type config :: struct
+  @type versioning_module :: module()
 
   @callback starts_processes() :: boolean
   @callback configure(keyword) :: {module(), config}
+  @callback unsupported_operations() :: [atom()]
+  @callback versioning_module() :: versioning_module() | nil
   @callback write(config, path, contents :: iodata(), write_opts) :: :ok | {:error, term}
   @callback write_stream(config, path, stream_opts) :: {:ok, Collectable.t()} | {:error, term}
   @callback read(config, path) :: {:ok, binary} | {:error, term}
@@ -32,6 +35,9 @@ defmodule Jido.VFS.Adapter do
   @callback clear(config) :: :ok | {:error, term}
   @callback set_visibility(config, path, Jido.VFS.Visibility.t()) :: :ok | {:error, term}
   @callback visibility(config, path) :: {:ok, Jido.VFS.Visibility.t()} | {:error, term}
+
+  # Extended filesystem operations (optional - adapters can choose to implement these)
+  @optional_callbacks unsupported_operations: 0, versioning_module: 0
 
   # Extended filesystem operations (optional - adapters can choose to implement these)
   @optional_callbacks stat: 2,

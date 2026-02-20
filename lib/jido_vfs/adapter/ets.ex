@@ -77,6 +77,9 @@ defmodule Jido.VFS.Adapter.ETS do
   @behaviour Jido.VFS.Adapter
 
   @impl Jido.VFS.Adapter
+  def versioning_module, do: Jido.VFS.Adapter.ETS.Versioning
+
+  @impl Jido.VFS.Adapter
   def starts_processes, do: true
 
   # Consolidated start_link functions using pattern matching

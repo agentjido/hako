@@ -7,6 +7,60 @@ defmodule JidoVFSTest do
     end
   end
 
+  defmodule RaisingConfigureAdapter do
+    def configure(_opts), do: raise("boom")
+  end
+
+  defmodule InvalidConfigureAdapter do
+    def configure(_opts), do: :invalid
+  end
+
+  defmodule MetadataVersioningAdapter do
+    def configure(_opts), do: {__MODULE__, %{configured: true}}
+    def versioning_module, do: MetadataVersioningAdapter.Versioning
+  end
+
+  defmodule MetadataVersioningAdapter.Versioning do
+    def commit(_config, _message, _opts), do: :ok
+  end
+
+  defmodule UnsupportedMetadataAdapter do
+    def configure(_opts), do: {__MODULE__, %{}}
+    def unsupported_operations, do: [:copy_between]
+    def copy(_source_config, _source, _destination_config, _destination, _opts), do: :ok
+  end
+
+  describe "safe adapter configuration" do
+    test "returns configured filesystem for valid adapter" do
+      assert {:ok, {Jido.VFS.Adapter.Local, %Jido.VFS.Adapter.Local.Config{}}} =
+               Jido.VFS.safe_configure(Jido.VFS.Adapter.Local, prefix: System.tmp_dir!())
+    end
+
+    test "normalizes raised configure errors" do
+      assert {:error, %Jido.VFS.Errors.AdapterError{adapter: RaisingConfigureAdapter}} =
+               Jido.VFS.safe_configure(RaisingConfigureAdapter, [])
+    end
+
+    test "returns typed error for invalid configure return shape" do
+      assert {:error, %Jido.VFS.Errors.AdapterError{adapter: InvalidConfigureAdapter}} =
+               Jido.VFS.safe_configure(InvalidConfigureAdapter, [])
+    end
+  end
+
+  describe "adapter metadata callbacks" do
+    test "uses adapter unsupported_operations callback in supports?/2" do
+      filesystem = {UnsupportedMetadataAdapter, %{}}
+      refute Jido.VFS.supports?(filesystem, :copy_between)
+    end
+
+    test "uses adapter versioning_module callback for commit operations" do
+      filesystem = {MetadataVersioningAdapter, %{configured: true}}
+
+      assert Jido.VFS.supports?(filesystem, :commit)
+      assert :ok = Jido.VFS.commit(filesystem, "metadata commit")
+    end
+  end
+
   describe "chunk/2" do
     test "empty binary returns empty list" do
       assert Jido.VFS.chunk("", 10) == []

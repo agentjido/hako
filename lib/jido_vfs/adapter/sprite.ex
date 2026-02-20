@@ -35,6 +35,9 @@ defmodule Jido.VFS.Adapter.Sprite do
 
   @behaviour Jido.VFS.Adapter
 
+  @impl Jido.VFS.Adapter
+  def versioning_module, do: Jido.VFS.Adapter.Sprite.Versioning
+
   @default_base_url "https://api.sprites.dev"
   @default_client :"Elixir.Sprites"
   @find_print_format "%y\t%s\t%T@\t%m\t%p\n"
@@ -1060,8 +1063,6 @@ defmodule Jido.VFS.Adapter.Sprite do
     |> String.downcase()
     |> String.contains?(String.downcase(expected))
   end
-
-  defp contains?(_, _), do: false
 
   defp adapter_error(reason) do
     Errors.AdapterError.exception(adapter: __MODULE__, reason: reason)

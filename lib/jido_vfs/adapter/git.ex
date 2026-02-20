@@ -61,6 +61,12 @@ defmodule Jido.VFS.Adapter.Git do
   @behaviour Jido.VFS.Adapter.Versioning
 
   @impl Jido.VFS.Adapter
+  def unsupported_operations, do: [:copy_between]
+
+  @impl Jido.VFS.Adapter
+  def versioning_module, do: __MODULE__
+
+  @impl Jido.VFS.Adapter
   @spec configure(keyword()) :: {__MODULE__, Config.t()}
   def configure(opts) do
     repo_path = Keyword.fetch!(opts, :path)
