@@ -35,6 +35,8 @@ defmodule Jido.VFS do
           | :read_revision
           | :rollback
 
+  @type copy_between_strategy :: :native | :stream | :tempfile
+
   defp convert_path_error({:path, :traversal}, path),
     do: Errors.PathTraversal.exception(attempted_path: path)
 
@@ -798,9 +800,20 @@ defmodule Jido.VFS do
   @doc """
   Copy a file from one filesystem to the other
 
-  This can either be done natively if the same adapter is used for both filesystems
-  or by streaming/read-write cycle the file from the source to the local system
-  and back to the destination.
+  Copy behavior is controlled by `:copy_between_strategy`:
+
+  - `:native` - use adapter-native cross-filesystem copy only (`copy/5`).
+  - `:stream` - stream chunks from source to destination without local temp files.
+  - `:tempfile` - spool through a local temp file.
+
+  The default strategy is `:tempfile`.
+
+  ## Options
+
+  - `:copy_between_strategy` - `:native | :stream | :tempfile` (default: `:tempfile`)
+  - `:copy_between_temp_dir` - temp directory for `:tempfile` strategy (default: `System.tmp_dir!/0`)
+  - `:chunk_size` - chunk size for streaming strategies (default: `64 * 1024`)
+  - all other options are forwarded to adapter `read`/`read_stream`/`write`/`write_stream`/`append` calls.
 
   ## Examples
 
@@ -839,102 +852,263 @@ defmodule Jido.VFS do
 
   # Same adapter, same config -> just do a plain copy
   def copy_between_filesystem({filesystem, source}, {filesystem, destination}, opts) do
-    copy(filesystem, source, destination, opts)
+    with {:ok, _strategy} <- copy_between_strategy_from_opts(opts) do
+      copy(filesystem, source, destination, copy_between_runtime_opts(opts))
+    end
   end
 
-  # Same adapter -> try direct copy if supported
+  # Same adapter
   def copy_between_filesystem(
         {{adapter, config_source}, path_source},
         {{adapter, config_destination}, path_destination},
         opts
       ) do
     with {:ok, normalized_source, normalized_destination} <-
-           normalize_copy_paths(path_source, path_destination) do
-      if supports?({adapter, config_source}, :copy_between) do
-        case normalize_adapter_call(fn ->
-               adapter.copy(
-                 config_source,
-                 normalized_source,
-                 config_destination,
-                 normalized_destination,
-                 opts
-               )
-             end) do
-          :ok ->
-            :ok
-
-          {:error, %Errors.UnsupportedOperation{}} ->
-            copy_via_local_memory(
-              {{adapter, config_source}, normalized_source},
-              {{adapter, config_destination}, normalized_destination},
-              opts
-            )
-
-          error ->
-            error
-        end
-      else
-        copy_via_local_memory(
-          {{adapter, config_source}, normalized_source},
-          {{adapter, config_destination}, normalized_destination},
-          opts
-        )
-      end
+           normalize_copy_paths(path_source, path_destination),
+         {:ok, strategy} <- copy_between_strategy_from_opts(opts) do
+      copy_between_with_strategy(
+        {{adapter, config_source}, normalized_source},
+        {{adapter, config_destination}, normalized_destination},
+        strategy,
+        opts
+      )
     else
       {:error, {:source, reason}} -> {:error, convert_path_error(reason, path_source)}
       {:error, {:destination, reason}} -> {:error, convert_path_error(reason, path_destination)}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  # different adapter
+  # Different adapters
   def copy_between_filesystem({source_filesystem, source_path}, {destination_filesystem, destination_path}, opts) do
     with {:ok, normalized_source, normalized_destination} <-
-           normalize_copy_paths(source_path, destination_path) do
-      copy_via_local_memory(
+           normalize_copy_paths(source_path, destination_path),
+         {:ok, strategy} <- copy_between_strategy_from_opts(opts) do
+      copy_between_with_strategy(
         {source_filesystem, normalized_source},
         {destination_filesystem, normalized_destination},
+        strategy,
         opts
       )
     else
       {:error, {:source, reason}} -> {:error, convert_path_error(reason, source_path)}
       {:error, {:destination, reason}} -> {:error, convert_path_error(reason, destination_path)}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp copy_via_local_memory(
+  defp copy_between_with_strategy(
+         {{adapter, config_source}, source_path},
+         {{adapter, config_destination}, destination_path},
+         :native,
+         opts
+       ) do
+    if supports?({adapter, config_source}, :copy_between) do
+      normalize_adapter_call(fn ->
+        adapter.copy(
+          config_source,
+          source_path,
+          config_destination,
+          destination_path,
+          copy_between_runtime_opts(opts)
+        )
+      end)
+    else
+      unsupported(adapter, :copy_between)
+    end
+  end
+
+  defp copy_between_with_strategy(_source, _destination, :native, _opts) do
+    unsupported(__MODULE__, :copy_between)
+  end
+
+  defp copy_between_with_strategy(source, destination, :stream, opts) do
+    copy_via_stream(source, destination, copy_between_runtime_opts(opts))
+  end
+
+  defp copy_between_with_strategy(source, destination, :tempfile, opts) do
+    copy_via_tempfile(source, destination, Keyword.delete(opts, :copy_between_strategy))
+  end
+
+  defp copy_between_runtime_opts(opts) do
+    Keyword.drop(opts, [:copy_between_strategy, :copy_between_temp_dir])
+  end
+
+  defp copy_between_strategy_from_opts(opts) do
+    case Keyword.get(opts, :copy_between_strategy, :tempfile) do
+      strategy when strategy in [:native, :stream, :tempfile] ->
+        {:ok, strategy}
+
+      strategy ->
+        {:error,
+         Errors.AdapterError.exception(
+           adapter: __MODULE__,
+           reason: %{
+             operation: :copy_between_filesystem,
+             reason: {:invalid_copy_between_strategy, strategy},
+             allowed_strategies: [:native, :stream, :tempfile]
+           }
+         )}
+    end
+  end
+
+  defp copy_via_stream(
          {source_filesystem, source_path},
          {destination_filesystem, destination_path},
          opts
        ) do
-    chunk_size = Keyword.get(opts, :chunk_size, 64 * 1024)
-    temp_path = Path.join(System.tmp_dir!(), "jido_vfs_copy_#{System.unique_integer([:positive, :monotonic])}")
+    chunk_size = normalize_copy_chunk_size(Keyword.get(opts, :chunk_size, 64 * 1024))
+    adapter_opts = Keyword.drop(opts, [:copy_between_temp_dir])
+    stream_opts = Keyword.put(adapter_opts, :chunk_size, chunk_size)
 
-    try do
-      with :ok <-
-             copy_source_into_tempfile(source_filesystem, source_path, temp_path, opts, chunk_size),
-           :ok <-
-             copy_tempfile_into_destination(
-               destination_filesystem,
-               destination_path,
-               temp_path,
-               opts,
-               chunk_size
-             ) do
-        :ok
+    with {:ok, chunks} <- source_copy_chunks(source_filesystem, source_path, stream_opts, chunk_size),
+         :ok <-
+           write_copy_chunks_to_destination(
+             destination_filesystem,
+             destination_path,
+             chunks,
+             stream_opts,
+             chunk_size
+           ) do
+      :ok
+    end
+  end
+
+  defp source_copy_chunks(source_filesystem, source_path, opts, chunk_size) do
+    if supports?(source_filesystem, :read_stream) do
+      case Jido.VFS.read_stream(source_filesystem, source_path, opts) do
+        {:ok, read_stream} -> {:ok, read_stream}
+        {:error, reason} -> copy_side_error(:source, source_path, reason)
       end
-    rescue
-      e -> {:error, Errors.to_error(e)}
-    catch
-      kind, reason ->
+    else
+      case Jido.VFS.read(source_filesystem, source_path) do
+        {:ok, contents} -> {:ok, chunk(contents, chunk_size)}
+        {:error, reason} -> copy_side_error(:source, source_path, reason)
+      end
+    end
+  end
+
+  defp write_copy_chunks_to_destination(destination_filesystem, destination_path, chunks, opts, _chunk_size) do
+    cond do
+      supports?(destination_filesystem, :write_stream) ->
+        with {:ok, write_stream} <- open_destination_write_stream(destination_filesystem, destination_path, opts) do
+          try do
+            Enum.into(chunks, write_stream)
+            :ok
+          rescue
+            error ->
+              copy_side_error(:destination, destination_path, error)
+          catch
+            kind, reason ->
+              copy_side_error(:destination, destination_path, %{kind: kind, reason: reason})
+          end
+        else
+          {:error, reason} ->
+            copy_side_error(:destination, destination_path, reason)
+        end
+
+      supports?(destination_filesystem, :append) ->
+        with :ok <- Jido.VFS.write(destination_filesystem, destination_path, "", opts) do
+          try do
+            Enum.reduce_while(chunks, :ok, fn chunk, :ok ->
+              case Jido.VFS.append(destination_filesystem, destination_path, chunk, opts) do
+                :ok -> {:cont, :ok}
+                {:error, reason} -> {:halt, copy_side_error(:destination, destination_path, reason)}
+              end
+            end)
+          rescue
+            error ->
+              copy_side_error(:destination, destination_path, error)
+          catch
+            kind, reason ->
+              copy_side_error(:destination, destination_path, %{kind: kind, reason: reason})
+          end
+        else
+          {:error, reason} ->
+            copy_side_error(:destination, destination_path, reason)
+        end
+
+      true ->
+        try do
+          contents =
+            chunks
+            |> Enum.reduce([], fn chunk, acc -> [acc, chunk] end)
+            |> IO.iodata_to_binary()
+
+          case Jido.VFS.write(destination_filesystem, destination_path, contents, opts) do
+            :ok -> :ok
+            {:error, reason} -> copy_side_error(:destination, destination_path, reason)
+          end
+        rescue
+          error ->
+            copy_side_error(:destination, destination_path, error)
+        catch
+          kind, reason ->
+            copy_side_error(:destination, destination_path, %{kind: kind, reason: reason})
+        end
+    end
+  end
+
+  defp copy_via_tempfile(
+         {source_filesystem, source_path},
+         {destination_filesystem, destination_path},
+         opts
+       ) do
+    chunk_size = normalize_copy_chunk_size(Keyword.get(opts, :chunk_size, 64 * 1024))
+    temp_dir = Keyword.get(opts, :copy_between_temp_dir, System.tmp_dir!())
+    adapter_opts = Keyword.drop(opts, [:copy_between_temp_dir])
+
+    with :ok <- ensure_copy_temp_dir(temp_dir) do
+      temp_path =
+        Path.join(
+          temp_dir,
+          "jido_vfs_copy_#{System.unique_integer([:positive, :monotonic])}"
+        )
+
+      try do
+        with :ok <-
+               copy_source_into_tempfile(source_filesystem, source_path, temp_path, adapter_opts, chunk_size),
+             :ok <-
+               copy_tempfile_into_destination(
+                 destination_filesystem,
+                 destination_path,
+                 temp_path,
+                 adapter_opts,
+                 chunk_size
+               ) do
+          :ok
+        end
+      rescue
+        e -> {:error, Errors.to_error(e)}
+      catch
+        kind, reason ->
+          {:error,
+           Errors.AdapterError.exception(
+             adapter: __MODULE__,
+             reason: %{operation: :copy_between_filesystem, kind: kind, reason: reason}
+           )}
+      after
+        File.rm(temp_path)
+      end
+    end
+  end
+
+  defp ensure_copy_temp_dir(temp_dir) do
+    case File.mkdir_p(temp_dir) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
         {:error,
          Errors.AdapterError.exception(
            adapter: __MODULE__,
-           reason: %{operation: :copy_between_filesystem, kind: kind, reason: reason}
+           reason: %{operation: :copy_between_filesystem, reason: {:temp_dir_unavailable, temp_dir, reason}}
          )}
-    after
-      File.rm(temp_path)
     end
   end
+
+  defp normalize_copy_chunk_size(size) when is_integer(size) and size > 0, do: size
+  defp normalize_copy_chunk_size(_), do: 64 * 1024
 
   defp normalize_copy_paths(source_path, destination_path) do
     case Jido.VFS.RelativePath.normalize(source_path) do
@@ -993,7 +1167,7 @@ defmodule Jido.VFS do
        ) do
     if supports?(destination_filesystem, :write_stream) do
       with {:ok, write_stream} <-
-             Jido.VFS.write_stream(
+             open_destination_write_stream(
                destination_filesystem,
                destination_path,
                Keyword.put(opts, :chunk_size, chunk_size)
@@ -1070,6 +1244,21 @@ defmodule Jido.VFS do
          adapter: __MODULE__,
          reason: %{operation: :copy_between_filesystem, side: side, path: path, reason: reason}
        )}
+    end
+  end
+
+  defp open_destination_write_stream(destination_filesystem, destination_path, opts) do
+    with :ok <- ensure_destination_write_target(destination_filesystem, destination_path, opts),
+         {:ok, write_stream} <- Jido.VFS.write_stream(destination_filesystem, destination_path, opts) do
+      {:ok, write_stream}
+    end
+  end
+
+  defp ensure_destination_write_target(destination_filesystem, destination_path, opts) do
+    case Jido.VFS.write(destination_filesystem, destination_path, "", opts) do
+      :ok -> :ok
+      {:error, %Errors.UnsupportedOperation{operation: :write}} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 

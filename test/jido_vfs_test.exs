@@ -823,6 +823,58 @@ defmodule JidoVFSTest do
 
       assert {:ok, "Hello World"} = Jido.VFS.read(filesystem_b, "test.txt")
     end
+
+    test "copy_between_filesystem stream strategy copies across adapters", %{tmp_dir: prefix} do
+      filesystem_a = Jido.VFS.Adapter.Local.configure(prefix: prefix)
+      filesystem_b = Jido.VFS.Adapter.InMemory.configure(name: InMemoryTest.StreamStrategy)
+
+      start_supervised(filesystem_b)
+
+      :ok = Jido.VFS.write(filesystem_a, "test.txt", "Hello Stream")
+
+      assert :ok =
+               Jido.VFS.copy_between_filesystem(
+                 {filesystem_a, "test.txt"},
+                 {filesystem_b, "copy.txt"},
+                 copy_between_strategy: :stream
+               )
+
+      assert {:ok, "Hello Stream"} = Jido.VFS.read(filesystem_b, "copy.txt")
+    end
+
+    test "copy_between_filesystem native strategy returns unsupported when adapter cannot copy_between" do
+      filesystem_a = Jido.VFS.Adapter.InMemory.configure(name: InMemoryTest.NativeStrategyA)
+      filesystem_b = Jido.VFS.Adapter.InMemory.configure(name: InMemoryTest.NativeStrategyB)
+
+      filesystem_a |> Supervisor.child_spec(id: :native_strategy_a) |> start_supervised()
+      filesystem_b |> Supervisor.child_spec(id: :native_strategy_b) |> start_supervised()
+
+      :ok = Jido.VFS.write(filesystem_a, "test.txt", "Hello Native")
+
+      assert {:error, %Jido.VFS.Errors.UnsupportedOperation{operation: :copy_between}} =
+               Jido.VFS.copy_between_filesystem(
+                 {filesystem_a, "test.txt"},
+                 {filesystem_b, "copy.txt"},
+                 copy_between_strategy: :native
+               )
+    end
+
+    test "copy_between_filesystem rejects invalid strategy" do
+      filesystem_a = Jido.VFS.Adapter.InMemory.configure(name: InMemoryTest.InvalidStrategyA)
+      filesystem_b = Jido.VFS.Adapter.InMemory.configure(name: InMemoryTest.InvalidStrategyB)
+
+      filesystem_a |> Supervisor.child_spec(id: :invalid_strategy_a) |> start_supervised()
+      filesystem_b |> Supervisor.child_spec(id: :invalid_strategy_b) |> start_supervised()
+
+      :ok = Jido.VFS.write(filesystem_a, "test.txt", "Hello Invalid Strategy")
+
+      assert {:error, %Jido.VFS.Errors.AdapterError{}} =
+               Jido.VFS.copy_between_filesystem(
+                 {filesystem_a, "test.txt"},
+                 {filesystem_b, "copy.txt"},
+                 copy_between_strategy: :invalid
+               )
+    end
   end
 
   describe "extended filesystem operations" do
