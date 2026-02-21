@@ -9,7 +9,7 @@ defmodule Jido.VFS.MixProject do
     [
       app: :jido_vfs,
       version: @version,
-      elixir: "~> 1.11",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -67,7 +67,7 @@ defmodule Jido.VFS.MixProject do
       {:sweet_xml, "~> 0.6"},
       {:jason, "~> 1.0"},
       {:eternal, "~> 1.2.2"},
-      {:splode, "~> 0.2.9 or ~> 0.3.0"},
+      {:splode, "~> 0.3.0"},
       {:git_cli, "~> 0.3.0"},
       {:tentacat, "~> 2.0"},
       {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", optional: true},
