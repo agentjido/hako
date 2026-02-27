@@ -6,6 +6,16 @@ defmodule Jido.VFS.Adapter.SpriteTest do
   alias Jido.VFS.Adapter.Sprite
   alias JidoVfsTest.SpriteFakeClient
 
+  defmodule ProbeScriptFailureClient do
+    def new(token, opts \\ []), do: SpriteFakeClient.new(token, opts)
+    def sprite(client, name), do: SpriteFakeClient.sprite(client, name)
+    def create(client, name, opts \\ []), do: SpriteFakeClient.create(client, name, opts)
+    def destroy(sprite), do: SpriteFakeClient.destroy(sprite)
+
+    def cmd(_sprite, "sh", ["-c", _script, "_", "/"], _opts), do: {"sh: probe failed\n", 127}
+    def cmd(sprite, command, args, opts), do: SpriteFakeClient.cmd(sprite, command, args, opts)
+  end
+
   adapter_test do
     sprite_name = "sprite_adapter_contract_#{System.unique_integer([:positive, :monotonic])}"
 
@@ -142,16 +152,102 @@ defmodule Jido.VFS.Adapter.SpriteTest do
     test "raises adapter error when required command primitives are missing" do
       sprite_name = "sprite_probe_failure_#{System.unique_integer([:positive, :monotonic])}"
 
-      assert_raise Jido.VFS.Errors.AdapterError, fn ->
+      error =
+        assert_raise Jido.VFS.Errors.AdapterError, fn ->
+          Sprite.configure(
+            client: SpriteFakeClient,
+            client_opts: [missing_commands: ["cp", "stat"]],
+            token: "test-token",
+            sprite_name: sprite_name,
+            create_on_demand: true,
+            root: "/workspace"
+          )
+        end
+
+      assert error.reason.operation == :probe_required_commands
+      assert error.reason.reason == :missing_command_primitives
+      assert Enum.sort(error.reason.missing_commands) == ["cp", "stat"]
+      assert error.reason.exit_code == 42
+    end
+
+    test "normalizes and deduplicates required command list before probing" do
+      sprite_name = "sprite_probe_normalize_#{System.unique_integer([:positive, :monotonic])}"
+
+      error =
+        assert_raise Jido.VFS.Errors.AdapterError, fn ->
+          Sprite.configure(
+            client: SpriteFakeClient,
+            client_opts: [missing_commands: ["stat"]],
+            token: "test-token",
+            sprite_name: sprite_name,
+            create_on_demand: true,
+            root: "/workspace",
+            required_commands: [" stat ", " ", :stat, "stat"]
+          )
+        end
+
+      assert error.reason.reason == :missing_command_primitives
+      assert error.reason.missing_commands == ["stat"]
+    end
+
+    test "returns typed error when probe script itself fails" do
+      sprite_name = "sprite_probe_script_fail_#{System.unique_integer([:positive, :monotonic])}"
+
+      error =
+        assert_raise Jido.VFS.Errors.AdapterError, fn ->
+          Sprite.configure(
+            client: ProbeScriptFailureClient,
+            token: "test-token",
+            sprite_name: sprite_name,
+            create_on_demand: true,
+            root: "/workspace",
+            required_commands: ["stat"]
+          )
+        end
+
+      assert error.reason.operation == :probe_required_commands
+      assert error.reason.reason == :probe_command_failed
+      assert error.reason.exit_code == 127
+      assert error.reason.output =~ "probe failed"
+    end
+
+    test "returns typed error when required_commands is not a list" do
+      sprite_name = "sprite_probe_invalid_commands_#{System.unique_integer([:positive, :monotonic])}"
+
+      error =
+        assert_raise Jido.VFS.Errors.AdapterError, fn ->
+          Sprite.configure(
+            client: SpriteFakeClient,
+            token: "test-token",
+            sprite_name: sprite_name,
+            create_on_demand: true,
+            root: "/workspace",
+            required_commands: :stat
+          )
+        end
+
+      assert error.reason.operation == :probe_required_commands
+      assert error.reason.reason == :invalid_probe_commands
+      assert error.reason.commands == :stat
+    end
+
+    test "allows configure when probe_commands is disabled" do
+      sprite_name = "sprite_probe_disabled_#{System.unique_integer([:positive, :monotonic])}"
+
+      filesystem =
         Sprite.configure(
           client: SpriteFakeClient,
           client_opts: [missing_commands: ["cp", "stat"]],
           token: "test-token",
           sprite_name: sprite_name,
           create_on_demand: true,
-          root: "/workspace"
+          root: "/workspace",
+          probe_commands: false
         )
-      end
+
+      on_exit(fn -> cleanup(filesystem) end)
+
+      assert {Sprite, %Sprite.Config{}} = filesystem
     end
   end
 
