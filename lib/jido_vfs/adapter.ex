@@ -37,9 +37,6 @@ defmodule Jido.VFS.Adapter do
   @callback visibility(config, path) :: {:ok, Jido.VFS.Visibility.t()} | {:error, term}
 
   # Extended filesystem operations (optional - adapters can choose to implement these)
-  @optional_callbacks unsupported_operations: 0, versioning_module: 0
-
-  # Extended filesystem operations (optional - adapters can choose to implement these)
   @optional_callbacks stat: 2,
                       access: 3,
                       append: 4,

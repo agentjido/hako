@@ -62,6 +62,12 @@ defmodule Jido.VFS.Adapter.Local do
   @behaviour Jido.VFS.Adapter
 
   @impl Jido.VFS.Adapter
+  def unsupported_operations, do: []
+
+  @impl Jido.VFS.Adapter
+  def versioning_module, do: nil
+
+  @impl Jido.VFS.Adapter
   def starts_processes, do: false
 
   @impl Jido.VFS.Adapter

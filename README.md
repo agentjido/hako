@@ -340,6 +340,12 @@ end
 
 Full documentation is available at [HexDocs](https://hexdocs.pm/jido_vfs).
 
+## Contributing
+
+Adapter authors should follow the
+[Adapter Onboarding Checklist](docs/adapter-onboarding-checklist.md)
+to ensure metadata callbacks, typed errors, and contract coverage are complete.
+
 ## License
 
 Apache-2.0 - see [LICENSE.md](LICENSE.md) for details.

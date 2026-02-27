@@ -106,7 +106,7 @@ defmodule Jido.VFS.MixProject do
 
   defp package do
     [
-      files: ["lib", "mix.exs", "README.md", "LICENSE.md", "CHANGELOG.md", "usage-rules.md"],
+      files: ["lib", "docs", "mix.exs", "README.md", "LICENSE.md", "CHANGELOG.md", "usage-rules.md"],
       maintainers: ["AgentJido"],
       licenses: ["Apache-2.0"],
       links: %{
@@ -126,7 +126,8 @@ defmodule Jido.VFS.MixProject do
       extras: [
         "README.md",
         "CHANGELOG.md",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "docs/adapter-onboarding-checklist.md"
       ],
       groups_for_modules: [
         Adapters: [

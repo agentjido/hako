@@ -98,6 +98,9 @@ Notes:
 - **Stat**: File metadata structures
 - **Visibility**: File permission handling
 
+### Adapter Onboarding
+- Use the [Adapter Onboarding Checklist](docs/adapter-onboarding-checklist.md) before opening a PR for a new adapter or metadata callback changes.
+
 ## Development Guidelines
 
 ### Code Style

@@ -66,6 +66,9 @@ defmodule Jido.VFS.Adapter.GitHub do
     ]
   end
 
+  @impl Jido.VFS.Adapter
+  def versioning_module, do: nil
+
   alias Jido.VFS.Errors
   alias Jido.VFS.Stat.File
   alias Jido.VFS.Stat.Dir
