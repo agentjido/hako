@@ -7,7 +7,7 @@ Welcome to the Jido.VFS contributor's guide! We're excited that you're intereste
 ### Development Environment
 
 1. **Elixir Version Requirements**
-   - Jido.VFS requires Elixir ~> 1.11
+   - Jido.VFS requires Elixir ~> 1.18
    - We recommend using asdf or similar version manager
 
 2. **Initial Setup**
@@ -71,25 +71,23 @@ Notes:
 ```
 .
 ├── lib/
-│   ├── jido/
-│   │   ├── vfs.ex            # Main entry point
-│   │   └── vfs/
-│   │       ├── adapter/      # Filesystem adapters
-│   │       │   ├── local.ex  # Local filesystem
-│   │       │   ├── in_memory.ex # In-memory storage
-│   │       │   ├── ets.ex    # ETS-backed storage
-│   │       │   ├── s3.ex     # AWS S3 / Minio
-│   │       │   ├── git.ex    # Git repositories
-│   │       │   └── github.ex # GitHub API
-│   │       ├── errors.ex     # Typed error classes
-│   │       ├── filesystem.ex # Filesystem behaviour
-│   │       ├── revision.ex   # Unified revision struct
-│   │       └── stat/         # File stat structures
+│   ├── jido_vfs.ex            # Main entry point
+│   └── jido_vfs/
+│       ├── adapter/           # Filesystem adapters
+│       │   ├── local.ex       # Local filesystem
+│       │   ├── in_memory.ex   # In-memory storage
+│       │   ├── ets.ex         # ETS-backed storage
+│       │   ├── s3.ex          # AWS S3 / Minio
+│       │   ├── git.ex         # Git repositories
+│       │   └── github.ex      # GitHub API
+│       ├── errors.ex          # Typed error classes
+│       ├── filesystem.ex      # Filesystem behaviour
+│       ├── revision.ex        # Unified revision struct
+│       └── stat/              # File stat structures
 ├── test/
-│   ├── jido/
-│   │   └── vfs/
-│   │       └── adapter/      # Adapter tests
-│   ├── support/          # Test helpers
+│   ├── jido_vfs/
+│   │   └── adapter/           # Adapter tests
+│   ├── support/               # Test helpers
 │   └── test_helper.exs
 └── mix.exs
 ```
@@ -160,7 +158,7 @@ Notes:
    mix coveralls
 
    # Run specific test file
-   mix test test/jido/vfs/adapter/local_test.exs
+   mix test test/jido_vfs/adapter/local_test.exs
 
    # Include S3 tests (requires Minio)
    mix test --include s3
