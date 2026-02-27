@@ -513,6 +513,16 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
       assert {:error, %Jido.VFS.Errors.FileNotFound{}} = Jido.VFS.read_stream(fs, "missing.txt")
     end
 
+    test "read stream surfaces chunk task failures as adapter errors", %{filesystem: fs} do
+      content = :crypto.strong_rand_bytes(100_000)
+      :ok = Jido.VFS.write(fs, "timeout_stream.bin", content)
+      {:ok, stream} = Jido.VFS.read_stream(fs, "timeout_stream.bin", timeout: 0)
+
+      assert_raise Jido.VFS.Errors.AdapterError, fn ->
+        Enum.to_list(stream)
+      end
+    end
+
     test "read stream produces chunks", %{filesystem: fs} do
       content = String.duplicate("x", 100_000)
       :ok = Jido.VFS.write(fs, "chunked_read.txt", content)
@@ -584,6 +594,47 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
 
       assert {:ok, :public} = Jido.VFS.visibility(fs, "a.txt")
       assert {:ok, :private} = Jido.VFS.visibility(fs, "b.txt")
+    end
+
+    test "delete removes stored file visibility", %{filesystem: fs} do
+      :ok = Jido.VFS.write(fs, "deleted.txt", "content", visibility: :private)
+      assert {:ok, :private} = Jido.VFS.visibility(fs, "deleted.txt")
+
+      assert :ok = Jido.VFS.delete(fs, "deleted.txt")
+      assert {:ok, :public} = Jido.VFS.visibility(fs, "deleted.txt")
+    end
+
+    test "delete_directory removes stored directory and child visibility", %{filesystem: fs} do
+      :ok =
+        Jido.VFS.write(
+          fs,
+          "private_dir/inner.txt",
+          "content",
+          visibility: :private,
+          directory_visibility: :private
+        )
+
+      assert {:ok, :private} = Jido.VFS.visibility(fs, "private_dir/")
+      assert {:ok, :private} = Jido.VFS.visibility(fs, "private_dir/inner.txt")
+
+      assert :ok = Jido.VFS.delete_directory(fs, "private_dir/", recursive: true)
+      assert {:ok, :public} = Jido.VFS.visibility(fs, "private_dir/")
+      assert {:ok, :public} = Jido.VFS.visibility(fs, "private_dir/inner.txt")
+    end
+
+    test "clear removes only visibility entries scoped to configured prefix", %{raw_config: config} do
+      fs_a = Jido.VFS.Adapter.S3.configure(config: config, bucket: "default", prefix: "vis_clear_a/")
+      fs_b = Jido.VFS.Adapter.S3.configure(config: config, bucket: "default", prefix: "vis_clear_b/")
+
+      :ok = Jido.VFS.write(fs_a, "file.txt", "content", visibility: :private)
+      :ok = Jido.VFS.write(fs_b, "file.txt", "content", visibility: :private)
+      assert {:ok, :private} = Jido.VFS.visibility(fs_a, "file.txt")
+      assert {:ok, :private} = Jido.VFS.visibility(fs_b, "file.txt")
+
+      assert :ok = Jido.VFS.clear(fs_a)
+
+      assert {:ok, :public} = Jido.VFS.visibility(fs_a, "file.txt")
+      assert {:ok, :private} = Jido.VFS.visibility(fs_b, "file.txt")
     end
   end
 

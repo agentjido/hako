@@ -16,6 +16,16 @@ defmodule Jido.VFS.Adapter.SpriteTest do
     def cmd(sprite, command, args, opts), do: SpriteFakeClient.cmd(sprite, command, args, opts)
   end
 
+  defmodule WriteFailureClient do
+    def new(token, opts \\ []), do: SpriteFakeClient.new(token, opts)
+    def sprite(client, name), do: SpriteFakeClient.sprite(client, name)
+    def create(client, name, opts \\ []), do: SpriteFakeClient.create(client, name, opts)
+    def destroy(sprite), do: SpriteFakeClient.destroy(sprite)
+
+    def cmd(_sprite, "sh", ["-c", _script, "_", _path], _opts), do: {"write failed\n", 1}
+    def cmd(sprite, command, args, opts), do: SpriteFakeClient.cmd(sprite, command, args, opts)
+  end
+
   adapter_test do
     sprite_name = "sprite_adapter_contract_#{System.unique_integer([:positive, :monotonic])}"
 
@@ -63,6 +73,30 @@ defmodule Jido.VFS.Adapter.SpriteTest do
 
       assert :ok = Jido.VFS.write(filesystem, "notes.txt", "hello from raw mode")
       assert {:ok, "hello from raw mode"} = Jido.VFS.read(filesystem, "notes.txt")
+    end
+  end
+
+  describe "write_stream" do
+    test "collectable raises when underlying write fails" do
+      sprite_name = "sprite_write_stream_fail_#{System.unique_integer([:positive, :monotonic])}"
+
+      filesystem =
+        Sprite.configure(
+          client: WriteFailureClient,
+          token: "test-token",
+          sprite_name: sprite_name,
+          create_on_demand: true,
+          root: "/workspace",
+          probe_commands: false
+        )
+
+      on_exit(fn -> cleanup(filesystem) end)
+
+      assert {:ok, stream} = Jido.VFS.write_stream(filesystem, "failed.txt")
+
+      assert_raise Jido.VFS.Errors.AdapterError, fn ->
+        Enum.into(["will fail"], stream)
+      end
     end
   end
 

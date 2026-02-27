@@ -493,21 +493,34 @@ defmodule JidoVFSTest do
       {:ok, filesystem: filesystem}
     end
 
-    test "reads configuration from :otp_app", context do
-      configuration = [
+    test "reads configuration from :otp_app" do
+      first_configuration = [
         adapter: Jido.VFS.Adapter.Local,
         prefix: "ziKK7t5LzV5XiJjYh30KxCLorRXqLwwEnZYJ"
       ]
 
-      Application.put_env(:jido_vfs_test, JidoVFSTest.AdhocFilesystem, configuration)
+      second_configuration = [
+        adapter: Jido.VFS.Adapter.Local,
+        prefix: "nC70eQp95g0f19uY4jAiWzcIg15uY8fDwC2P"
+      ]
+
+      Application.put_env(:jido_vfs_test, JidoVFSTest.AdhocFilesystem, first_configuration)
+
+      on_exit(fn ->
+        Application.delete_env(:jido_vfs_test, JidoVFSTest.AdhocFilesystem)
+        :persistent_term.erase({Jido.VFS.Filesystem, JidoVFSTest.AdhocFilesystem})
+      end)
 
       defmodule AdhocFilesystem do
         use Jido.VFS.Filesystem, otp_app: :jido_vfs_test
       end
 
-      {_module, module_config} = JidoVFSTest.AdhocFilesystem.__filesystem__()
+      {_module, first_module_config} = JidoVFSTest.AdhocFilesystem.__filesystem__()
+      Application.put_env(:jido_vfs_test, JidoVFSTest.AdhocFilesystem, second_configuration)
+      {_module, second_module_config} = JidoVFSTest.AdhocFilesystem.__filesystem__()
 
-      assert module_config.prefix == "ziKK7t5LzV5XiJjYh30KxCLorRXqLwwEnZYJ"
+      assert first_module_config.prefix == "ziKK7t5LzV5XiJjYh30KxCLorRXqLwwEnZYJ"
+      assert second_module_config.prefix == "ziKK7t5LzV5XiJjYh30KxCLorRXqLwwEnZYJ"
     end
 
     test "directory traversals are detected and reported", %{filesystem: filesystem} do

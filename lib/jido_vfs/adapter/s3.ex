@@ -212,6 +212,36 @@ defmodule Jido.VFS.Adapter.S3 do
     resolve_visibility(table, config, path)
   end
 
+  defp delete_stored_visibility(%Config{} = config, path) do
+    table = ensure_visibility_table()
+    :ets.delete(table, visibility_key(config, path))
+    :ok
+  end
+
+  defp delete_stored_visibility_prefix(%Config{} = config, path_prefix) do
+    table = ensure_visibility_table()
+    normalized_prefix = String.trim_trailing(path_prefix, "/")
+
+    :ets.foldl(
+      fn
+        {{bucket, configured_prefix, path} = key, _visibility}, :ok ->
+          if bucket == config.bucket and configured_prefix == config.prefix and
+               visibility_key_matches_prefix?(path, path_prefix, normalized_prefix) do
+            :ets.delete(table, key)
+          end
+
+          :ok
+
+        _, :ok ->
+          :ok
+      end,
+      :ok,
+      table
+    )
+
+    :ok
+  end
+
   def reset_visibility_store do
     case :ets.whereis(@visibility_table) do
       :undefined ->
@@ -313,10 +343,7 @@ defmodule Jido.VFS.Adapter.S3 do
           max_concurrency: Keyword.get(op.opts, :max_concurrency, 8),
           timeout: Keyword.get(op.opts, :timeout, 60_000)
         )
-        |> Stream.map(fn
-          {:ok, {_start_byte, chunk}} ->
-            chunk
-        end)
+        |> Stream.map(&stream_chunk_or_raise/1)
 
       {:ok, stream}
     else
@@ -333,6 +360,7 @@ defmodule Jido.VFS.Adapter.S3 do
 
     case ExAws.request(operation, config.config) do
       {:ok, _} ->
+        delete_stored_visibility(config, path)
         :ok
 
       {:error, error} ->
@@ -471,11 +499,25 @@ defmodule Jido.VFS.Adapter.S3 do
     path = if String.ends_with?(path, "/"), do: path, else: path <> "/"
 
     if Keyword.get(opts, :recursive, false) do
-      delete_objects_by_prefix(config, path)
+      case delete_objects_by_prefix(config, path) do
+        :ok ->
+          delete_stored_visibility_prefix(config, path)
+          :ok
+
+        error ->
+          error
+      end
     else
       case list_contents(config, path) do
         {:ok, []} ->
-          delete(config, String.trim_trailing(path, "/"))
+          case delete(config, String.trim_trailing(path, "/")) do
+            :ok ->
+              delete_stored_visibility_prefix(config, path)
+              :ok
+
+            error ->
+              error
+          end
 
         {:ok, _} ->
           {:error, %Errors.DirectoryNotEmpty{dir_path: path}}
@@ -488,7 +530,16 @@ defmodule Jido.VFS.Adapter.S3 do
 
   @impl Jido.VFS.Adapter
   def clear(config) do
-    delete_objects_by_prefix(config, clear_prefix(config))
+    path_prefix = clear_prefix(config)
+
+    case delete_objects_by_prefix(config, path_prefix) do
+      :ok ->
+        delete_stored_visibility_prefix(config, path_prefix)
+        :ok
+
+      error ->
+        error
+    end
   end
 
   @impl Jido.VFS.Adapter
@@ -545,6 +596,31 @@ defmodule Jido.VFS.Adapter.S3 do
           parent_path -> resolve_visibility(table, config, parent_path)
         end
     end
+  end
+
+  defp visibility_key_matches_prefix?(path, path_prefix, normalized_prefix) do
+    path == normalized_prefix or String.starts_with?(path, path_prefix)
+  end
+
+  defp stream_chunk_or_raise({:ok, {start_byte, chunk}}) when is_integer(start_byte), do: chunk
+  defp stream_chunk_or_raise({:ok, {:ok, {_start_byte, chunk}}}), do: chunk
+
+  defp stream_chunk_or_raise({:ok, {:error, reason}}) do
+    raise Errors.AdapterError.exception(adapter: __MODULE__, reason: {:read_stream_chunk_failed, reason})
+  end
+
+  defp stream_chunk_or_raise({:exit, reason}) do
+    raise Errors.AdapterError.exception(
+            adapter: __MODULE__,
+            reason: {:read_stream_chunk_task_exit, reason}
+          )
+  end
+
+  defp stream_chunk_or_raise(result) do
+    raise Errors.AdapterError.exception(
+            adapter: __MODULE__,
+            reason: {:read_stream_invalid_chunk_result, result}
+          )
   end
 
   defp parse_s3_size(size) when is_integer(size), do: size

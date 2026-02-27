@@ -92,8 +92,14 @@ defmodule Jido.VFS.Adapter.Sprite do
 
           list, :done ->
             content = IO.iodata_to_binary(:lists.reverse(list))
-            _ = Jido.VFS.Adapter.Sprite.write(config, path, content, opts)
-            stream
+
+            case Jido.VFS.Adapter.Sprite.write(config, path, content, opts) do
+              :ok ->
+                stream
+
+              {:error, %_{} = error} ->
+                raise error
+            end
 
           _list, :halt ->
             :ok

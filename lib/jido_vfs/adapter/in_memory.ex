@@ -65,7 +65,7 @@ defmodule Jido.VFS.Adapter.InMemory do
 
           list, :done ->
             contents = original <> IO.iodata_to_binary(:lists.reverse(list))
-            Jido.VFS.Adapter.InMemory.write(config, path, contents, [])
+            :ok = Jido.VFS.Adapter.InMemory.write(config, path, contents, [])
             stream
 
           _, :halt ->

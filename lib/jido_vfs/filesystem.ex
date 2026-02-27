@@ -36,7 +36,10 @@ defmodule Jido.VFS.Filesystem do
       end
 
       def __filesystem__ do
-        :persistent_term.get(@key, init())
+        case :persistent_term.get(@key, :__jido_vfs_missing__) do
+          :__jido_vfs_missing__ -> init()
+          filesystem -> filesystem
+        end
       end
 
       if @adapter.starts_processes() do
