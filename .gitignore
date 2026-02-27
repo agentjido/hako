@@ -32,3 +32,6 @@ minio
 /priv/plts/
 *.plt
 *.plt.hash
+
+# Local environment variables
+.env
