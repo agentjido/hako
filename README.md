@@ -137,7 +137,7 @@ through `sprites-ex`.
 
 ```elixir
 # Add sprites-ex in your project if needed
-# {:sprites, git: "https://github.com/superfly/sprites-ex.git"}
+# {:sprites, github: "superfly/sprites-ex"}
 
 filesystem =
   Jido.VFS.Adapter.Sprite.configure(

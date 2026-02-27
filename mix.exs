@@ -70,7 +70,8 @@ defmodule Jido.VFS.MixProject do
       {:splode, "~> 0.3.0"},
       {:git_cli, "~> 0.3.0"},
       {:tentacat, "~> 2.0"},
-      {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", optional: true},
+      # `sprites` is a git dependency; keep it test-only so Hex package validation passes.
+      {:sprites, github: "superfly/sprites-ex", only: :test, runtime: false, optional: true},
 
       # Dev/Test dependencies
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -92,7 +93,7 @@ defmodule Jido.VFS.MixProject do
     [
       setup: ["deps.get"],
       test: "test --exclude flaky",
-      docs: "docs -f html --open",
+      docs: "docs --formatter html",
       q: ["quality"],
       quality: [
         "format --check-formatted",
