@@ -34,12 +34,12 @@ defmodule Jido.VFS.Adapter.Sprite.CommandTransport do
     end
   end
 
-  @spec probe_required_commands(Config.t(), [String.t()]) :: :ok | {:error, term()}
+  @spec probe_required_commands(Config.t(), [String.t()] | term()) :: :ok | {:error, term()}
   def probe_required_commands(%Config{} = config, commands) when is_list(commands) do
     unique_commands =
       commands
-      |> Enum.map(&to_string/1)
-      |> Enum.reject(&(&1 == ""))
+      |> Enum.map(&normalize_command/1)
+      |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
     if unique_commands == [] do
@@ -52,7 +52,7 @@ defmodule Jido.VFS.Adapter.Sprite.CommandTransport do
           :ok
 
         {:ok, {output, code}} ->
-          {:error, missing_command_error(output, code)}
+          {:error, probe_command_error(output, code)}
 
         {:error, reason} ->
           {:error,
@@ -62,6 +62,18 @@ defmodule Jido.VFS.Adapter.Sprite.CommandTransport do
            )}
       end
     end
+  end
+
+  def probe_required_commands(%Config{}, commands) do
+    {:error,
+     Errors.AdapterError.exception(
+       adapter: Jido.VFS.Adapter.Sprite,
+       reason: %{
+         operation: :probe_required_commands,
+         reason: :invalid_probe_commands,
+         commands: commands
+       }
+     )}
   end
 
   defp probe_script(commands) do
@@ -79,19 +91,41 @@ defmodule Jido.VFS.Adapter.Sprite.CommandTransport do
     """
   end
 
-  defp missing_command_error(output, code) do
+  defp normalize_command(command) do
+    command
+    |> to_string()
+    |> String.trim()
+    |> case do
+      "" -> nil
+      normalized -> normalized
+    end
+  end
+
+  defp probe_command_error(output, code) do
     missing_commands = parse_missing_commands(output)
 
-    Errors.AdapterError.exception(
-      adapter: Jido.VFS.Adapter.Sprite,
-      reason: %{
-        operation: :probe_required_commands,
-        reason: :missing_command_primitives,
-        missing_commands: missing_commands,
-        exit_code: code,
-        output: output
-      }
-    )
+    if missing_commands == [] do
+      Errors.AdapterError.exception(
+        adapter: Jido.VFS.Adapter.Sprite,
+        reason: %{
+          operation: :probe_required_commands,
+          reason: :probe_command_failed,
+          exit_code: code,
+          output: output
+        }
+      )
+    else
+      Errors.AdapterError.exception(
+        adapter: Jido.VFS.Adapter.Sprite,
+        reason: %{
+          operation: :probe_required_commands,
+          reason: :missing_command_primitives,
+          missing_commands: missing_commands,
+          exit_code: code,
+          output: output
+        }
+      )
+    end
   end
 
   defp parse_missing_commands(output) when is_binary(output) do
