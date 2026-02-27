@@ -70,7 +70,8 @@ defmodule Jido.VFS.MixProject do
       {:splode, "~> 0.3.0"},
       {:git_cli, "~> 0.3.0"},
       {:tentacat, "~> 2.0"},
-      {:sprites, github: "superfly/sprites-ex", optional: true},
+      # `sprites` is a git dependency; keep it test-only so Hex package validation passes.
+      {:sprites, github: "superfly/sprites-ex", only: :test, runtime: false, optional: true},
 
       # Dev/Test dependencies
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
