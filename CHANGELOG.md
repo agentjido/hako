@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized `Jido.VFS.revisions/3` output to `%Jido.VFS.Revision{}` across versioned adapters.
 - Removed legacy `:hako` runtime config reads; adapters now use `:jido_vfs` only.
 - Hardened cross-filesystem copy fallback to use capability checks and tempfile spooling for bounded memory.
+- Aligned ecosystem baseline docs and conventions:
+  - normalized Sprite dependency examples to `github: "superfly/sprites-ex"`
+  - updated contributor docs for Elixir `~> 1.18` and current `lib/jido_vfs` + `test/jido_vfs` paths
+  - updated `mix docs` alias to avoid browser side effects (`docs --formatter html`)
 
 ### Fixed
 - Normalized adapter error mapping to avoid raw string/atom leaks from public API paths.
