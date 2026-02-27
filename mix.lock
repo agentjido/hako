@@ -55,5 +55,4 @@
   "tentacat": {:hex, :tentacat, "2.5.0", "d0177ae1289faf6814a85aea044bcdc1ca64a4b1f961e44189451d5c9060a662", [:mix], [{:httpoison, "~> 2.0", [hex: :httpoison, repo: "hexpm", optional: false]}, {:jason, "~> 1.2", [hex: :jason, repo: "hexpm", optional: false]}], "hexpm", "c7d3d34a56d5dc870c2155444f7d6cd0e6959dd65c16bb9174442e347f34334f"},
   "text_diff": {:hex, :text_diff, "0.1.0", "1caf3175e11a53a9a139bc9339bd607c47b9e376b073d4571c031913317fecaa", [:mix], [], "hexpm", "d1ffaaecab338e49357b6daa82e435f877e0649041ace7755583a0ea3362dbd7"},
   "unicode_util_compat": {:hex, :unicode_util_compat, "0.7.1", "a48703a25c170eedadca83b11e88985af08d35f37c6f664d6dcfb106a97782fc", [:rebar3], [], "hexpm", "b3a917854ce3ae233619744ad1e0102e05673136776fb2fa76234f3e03b23642"},
-  "zoi": {:hex, :zoi, "0.17.1", "406aa87bb4181f41dee64336b75434367b7d3e88db813b0e6db0ae2d0f81f743", [:mix], [{:decimal, "~> 2.0", [hex: :decimal, repo: "hexpm", optional: true]}, {:phoenix_html, "~> 2.14.2 or ~> 3.0 or ~> 4.1", [hex: :phoenix_html, repo: "hexpm", optional: true]}], "hexpm", "3a11bf3bc9189f988ac74e81b5d7ca0c689b2a20eed220746a7043aa528e2aab"},
 }
