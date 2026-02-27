@@ -276,7 +276,12 @@ defmodule Jido.VFS.Adapter.S3 do
     end
 
     if dir_visibility = Keyword.get(opts, :directory_visibility) do
-      if dir_path = parent_directory_path(path) do
+      dir_path =
+        if String.ends_with?(path, "/"),
+          do: path,
+          else: parent_directory_path(path)
+
+      if is_binary(dir_path) do
         store_visibility(config, dir_path, dir_visibility)
       end
     end
@@ -341,7 +346,8 @@ defmodule Jido.VFS.Adapter.S3 do
             ExAws.S3.Download.get_chunk(op, boundaries, config.config)
           end,
           max_concurrency: Keyword.get(op.opts, :max_concurrency, 8),
-          timeout: Keyword.get(op.opts, :timeout, 60_000)
+          timeout: Keyword.get(op.opts, :timeout, 60_000),
+          on_timeout: :kill_task
         )
         |> Stream.map(&stream_chunk_or_raise/1)
 
