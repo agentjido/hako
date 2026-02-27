@@ -27,10 +27,8 @@ defmodule Jido.VFS.Filesystem do
       @key {Jido.VFS.Filesystem, __MODULE__}
 
       def init do
-        filesystem =
-          @opts
-          |> Jido.VFS.Filesystem.merge_app_env(__MODULE__)
-          |> @adapter.configure()
+        opts = Jido.VFS.Filesystem.merge_app_env(@opts, __MODULE__)
+        filesystem = Jido.VFS.configure!(@adapter, opts)
 
         :persistent_term.put(@key, filesystem)
 

@@ -25,15 +25,22 @@ defmodule Jido.VFS.Adapter.Sprite do
   - `:root` - Root path on sprite filesystem (default: `"/"`)
   - `:create_on_demand` - Create sprite in `configure/1` (default: `false`)
   - `:client` - Client module (default: `Sprites`)
+  - `:client_opts` - Extra options passed to `client.new/2` (default: `[]`)
+  - `:probe_commands` - Validate required shell primitives during configure (default: `true`)
+  - `:required_commands` - Override command primitives to probe
   """
 
   import Bitwise
 
   alias Jido.VFS.Errors
+  alias Jido.VFS.Adapter.Sprite.CommandTransport
   alias Jido.VFS.Stat.Dir
   alias Jido.VFS.Stat.File
 
   @behaviour Jido.VFS.Adapter
+
+  @impl Jido.VFS.Adapter
+  def versioning_module, do: Jido.VFS.Adapter.Sprite.Versioning
 
   @default_base_url "https://api.sprites.dev"
   @default_client :"Elixir.Sprites"
@@ -43,6 +50,7 @@ defmodule Jido.VFS.Adapter.Sprite do
   @write_raw_script ~s(printf "%s" "$JIDO_VFS_DATA" > "$1")
   @append_raw_script ~s(printf "%s" "$JIDO_VFS_DATA" >> "$1")
   @clear_script ~s(find "$1" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +)
+  @required_commands ~w(base64 cat chmod cp find mkdir mv rm rmdir sh stat test)
 
   defmodule Config do
     @moduledoc false
@@ -99,19 +107,29 @@ defmodule Jido.VFS.Adapter.Sprite do
   @impl Jido.VFS.Adapter
   def configure(opts) do
     client = Keyword.get(opts, :client, @default_client)
+
+    client_opts =
+      case Keyword.get(opts, :client_opts, []) do
+        list when is_list(list) -> list
+        _ -> []
+      end
+
     encoding = normalize_encoding(Keyword.get(opts, :encoding, :base64))
     base_url = Keyword.get(opts, :base_url, @default_base_url)
     root = normalize_root(Keyword.get(opts, :root, "/"))
     sprite_name = Keyword.get(opts, :sprite_name)
     token = Keyword.get(opts, :token) || System.get_env("SPRITES_TOKEN")
     create_on_demand = Keyword.get(opts, :create_on_demand, false)
+    probe_commands? = Keyword.get(opts, :probe_commands, true)
+    required_commands = Keyword.get(opts, :required_commands, @required_commands)
 
     sprite =
       case Keyword.get(opts, :sprite) do
         nil ->
           ensure_client_loaded!(client)
 
-          client_handle = apply(client, :new, [token || missing_token!(), [base_url: base_url]])
+          client_handle =
+            apply(client, :new, [token || missing_token!(), [base_url: base_url] ++ client_opts])
 
           if create_on_demand do
             create_or_connect_sprite(client, client_handle, sprite_name || missing_sprite_name!())
@@ -133,7 +151,14 @@ defmodule Jido.VFS.Adapter.Sprite do
       client: client
     }
 
-    {__MODULE__, config}
+    if probe_commands? do
+      case CommandTransport.probe_required_commands(config, required_commands) do
+        :ok -> {__MODULE__, config}
+        {:error, error} -> raise error
+      end
+    else
+      {__MODULE__, config}
+    end
   end
 
   @impl Jido.VFS.Adapter
@@ -243,7 +268,7 @@ defmodule Jido.VFS.Adapter.Sprite do
   def file_exists(%Config{} = config, path) do
     target = full_path(config, path)
 
-    case execute_command(config, "test", ["-e", target]) do
+    case CommandTransport.execute(config, "test", ["-e", target]) do
       {:ok, {_output, 0}} ->
         {:ok, :exists}
 
@@ -803,7 +828,7 @@ defmodule Jido.VFS.Adapter.Sprite do
   defp mode_for_struct(visibility, %File{}), do: mode_for_kind(visibility, :file)
 
   defp run_ok_command(%Config{} = config, operation, path, command, args, opts \\ []) do
-    case execute_command(config, command, args, opts) do
+    case CommandTransport.execute(config, command, args, opts) do
       {:ok, {_output, 0}} ->
         :ok
 
@@ -816,7 +841,7 @@ defmodule Jido.VFS.Adapter.Sprite do
   end
 
   defp run_output_command(%Config{} = config, operation, path, command, args, opts \\ []) do
-    case execute_command(config, command, args, opts) do
+    case CommandTransport.execute(config, command, args, opts) do
       {:ok, {output, 0}} ->
         {:ok, output}
 
@@ -825,32 +850,6 @@ defmodule Jido.VFS.Adapter.Sprite do
 
       {:error, reason} ->
         {:error, adapter_error(reason)}
-    end
-  end
-
-  defp execute_command(%Config{} = config, command, args, opts \\ []) do
-    cmd_opts = Keyword.merge([stderr_to_stdout: true], opts)
-
-    try do
-      result =
-        apply(config.client, :cmd, [config.sprite, command, Enum.map(args, &to_string/1), cmd_opts])
-
-      case result do
-        {output, code} when is_binary(output) and is_integer(code) ->
-          {:ok, {output, code}}
-
-        {output, code} when is_integer(code) ->
-          {:ok, {IO.iodata_to_binary(output), code}}
-
-        other ->
-          {:error, {:unexpected_cmd_result, other}}
-      end
-    rescue
-      exception ->
-        {:error, exception}
-    catch
-      kind, reason ->
-        {:error, {kind, reason}}
     end
   end
 
@@ -1060,8 +1059,6 @@ defmodule Jido.VFS.Adapter.Sprite do
     |> String.downcase()
     |> String.contains?(String.downcase(expected))
   end
-
-  defp contains?(_, _), do: false
 
   defp adapter_error(reason) do
     Errors.AdapterError.exception(adapter: __MODULE__, reason: reason)

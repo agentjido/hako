@@ -52,6 +52,20 @@ defmodule Jido.VFS.Adapter.GitHub do
 
   @behaviour Jido.VFS.Adapter
 
+  @impl Jido.VFS.Adapter
+  def unsupported_operations do
+    [
+      :read_stream,
+      :write_stream,
+      :clear,
+      :set_visibility,
+      :visibility,
+      :create_directory,
+      :delete_directory,
+      :copy_between
+    ]
+  end
+
   alias Jido.VFS.Errors
   alias Jido.VFS.Stat.File
   alias Jido.VFS.Stat.Dir

@@ -138,6 +138,23 @@ defmodule Jido.VFS.Adapter.SpriteTest do
     end
   end
 
+  describe "configure command probes" do
+    test "raises adapter error when required command primitives are missing" do
+      sprite_name = "sprite_probe_failure_#{System.unique_integer([:positive, :monotonic])}"
+
+      assert_raise Jido.VFS.Errors.AdapterError, fn ->
+        Sprite.configure(
+          client: SpriteFakeClient,
+          client_opts: [missing_commands: ["cp", "stat"]],
+          token: "test-token",
+          sprite_name: sprite_name,
+          create_on_demand: true,
+          root: "/workspace"
+        )
+      end
+    end
+  end
+
   defp new_filesystem(prefix, opts \\ []) do
     sprite_name = "#{prefix}_#{System.unique_integer([:positive, :monotonic])}"
 

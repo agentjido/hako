@@ -86,6 +86,12 @@ defmodule Jido.VFS.Adapter.InMemory do
 
   @behaviour Jido.VFS.Adapter
 
+  @impl Jido.VFS.Adapter
+  def unsupported_operations, do: [:copy_between]
+
+  @impl Jido.VFS.Adapter
+  def versioning_module, do: Jido.VFS.Adapter.InMemory.Versioning
+
   defp unsupported(operation) do
     {:error, Errors.UnsupportedOperation.exception(operation: operation, adapter: __MODULE__)}
   end

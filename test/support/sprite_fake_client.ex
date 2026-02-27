@@ -7,11 +7,12 @@ defmodule JidoVfsTest.SpriteFakeClient do
   @write_raw_script ~s(printf "%s" "$JIDO_VFS_DATA" > "$1")
   @append_raw_script ~s(printf "%s" "$JIDO_VFS_DATA" >> "$1")
   @clear_script ~s(find "$1" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +)
+  @probe_marker "__JIDO_VFS_MISSING__"
   @checkpoint_table :jido_vfs_sprite_fake_checkpoints
 
   defmodule Client do
     @moduledoc false
-    defstruct token: nil, base_url: "https://api.sprites.dev"
+    defstruct token: nil, base_url: "https://api.sprites.dev", missing_commands: []
   end
 
   defmodule Sprite do
@@ -20,7 +21,18 @@ defmodule JidoVfsTest.SpriteFakeClient do
   end
 
   def new(token, opts \\ []) do
-    %Client{token: token, base_url: Keyword.get(opts, :base_url, "https://api.sprites.dev")}
+    missing_commands =
+      opts
+      |> Keyword.get(:missing_commands, [])
+      |> List.wrap()
+      |> Enum.map(&to_string/1)
+      |> Enum.uniq()
+
+    %Client{
+      token: token,
+      base_url: Keyword.get(opts, :base_url, "https://api.sprites.dev"),
+      missing_commands: missing_commands
+    }
   end
 
   def sprite(%Client{} = client, name) do
@@ -323,8 +335,12 @@ defmodule JidoVfsTest.SpriteFakeClient do
       @clear_script ->
         clear_directory(local_path)
 
-      _ ->
-        {"sh: unsupported script\n", 1}
+      script when is_binary(script) ->
+        if String.contains?(script, @probe_marker) do
+          probe_required_commands(sprite)
+        else
+          {"sh: unsupported script\n", 1}
+        end
     end
   end
 
@@ -403,6 +419,12 @@ defmodule JidoVfsTest.SpriteFakeClient do
 
         {"", 0}
     end
+  end
+
+  defp probe_required_commands(%Sprite{client: %Client{missing_commands: []}}), do: {"", 0}
+
+  defp probe_required_commands(%Sprite{client: %Client{missing_commands: missing_commands}}) do
+    {"#{@probe_marker}#{Enum.join(missing_commands, " ")}\n", 42}
   end
 
   defp extract_positional_args(args) do

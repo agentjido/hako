@@ -137,7 +137,7 @@ through `sprites-ex`.
 
 ```elixir
 # Add sprites-ex in your project if needed
-# {:sprites, git: "https://github.com/superfly/sprites-ex.git"}
+# {:sprites, github: "superfly/sprites-ex"}
 
 filesystem =
   Jido.VFS.Adapter.Sprite.configure(
@@ -343,3 +343,13 @@ Full documentation is available at [HexDocs](https://hexdocs.pm/jido_vfs).
 ## License
 
 Apache-2.0 - see [LICENSE.md](LICENSE.md) for details.
+
+## Package Purpose
+
+`jido_vfs` is the filesystem abstraction layer for Jido packages, with adapters for local and remote storage backends.
+
+## Testing Paths
+
+- Unit/adapter tests: `mix test`
+- Full quality gate: `mix quality`
+- Optional flaky cases: `mix test --include flaky`
