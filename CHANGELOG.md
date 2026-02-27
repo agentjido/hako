@@ -17,10 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized `Jido.VFS.revisions/3` output to `%Jido.VFS.Revision{}` across versioned adapters.
 - Removed legacy `:hako` runtime config reads; adapters now use `:jido_vfs` only.
 - Hardened cross-filesystem copy fallback to use capability checks and tempfile spooling for bounded memory.
-- Expanded Sprite command probe hardening:
-  - normalized/deduplicated required command probe input
-  - added typed probe failures for invalid command lists and probe-script failures
-  - expanded Sprite probe tests to cover success and representative typed failure paths
 
 ### Fixed
 - Normalized adapter error mapping to avoid raw string/atom leaks from public API paths.
