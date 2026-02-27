@@ -169,6 +169,12 @@ defmodule Jido.VFS.Adapter.S3 do
   @behaviour Jido.VFS.Adapter
   @visibility_table :jido_vfs_s3_visibility_store
 
+  @impl Jido.VFS.Adapter
+  def unsupported_operations, do: []
+
+  @impl Jido.VFS.Adapter
+  def versioning_module, do: nil
+
   defp ensure_visibility_table do
     case :ets.whereis(@visibility_table) do
       :undefined ->

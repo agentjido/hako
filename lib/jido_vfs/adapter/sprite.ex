@@ -40,6 +40,9 @@ defmodule Jido.VFS.Adapter.Sprite do
   @behaviour Jido.VFS.Adapter
 
   @impl Jido.VFS.Adapter
+  def unsupported_operations, do: []
+
+  @impl Jido.VFS.Adapter
   def versioning_module, do: Jido.VFS.Adapter.Sprite.Versioning
 
   @default_base_url "https://api.sprites.dev"

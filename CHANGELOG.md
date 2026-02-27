@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized `Jido.VFS.revisions/3` output to `%Jido.VFS.Revision{}` across versioned adapters.
 - Removed legacy `:hako` runtime config reads; adapters now use `:jido_vfs` only.
 - Hardened cross-filesystem copy fallback to use capability checks and tempfile spooling for bounded memory.
+- Added adapter metadata guardrails:
+  - metadata callbacks (`unsupported_operations/0`, `versioning_module/0`) are now required by `Jido.VFS.Adapter`
+  - built-in adapters now implement metadata callbacks explicitly
+  - added metadata contract tests plus a failing-path behaviour warning test for missing callbacks
+- Added an adapter onboarding checklist and linked it from README/CONTRIBUTING.
 
 ### Fixed
 - Normalized adapter error mapping to avoid raw string/atom leaks from public API paths.
