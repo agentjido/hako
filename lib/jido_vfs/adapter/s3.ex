@@ -39,11 +39,30 @@ defmodule Jido.VFS.Adapter.S3 do
   alias Jido.VFS.Errors
 
   defmodule Config do
-    @moduledoc false
+    @moduledoc """
+    Runtime configuration for the S3 adapter.
+    """
+
+    @type t :: %__MODULE__{
+            config: keyword() | map() | nil,
+            bucket: String.t() | nil,
+            prefix: String.t() | nil
+          }
+
     defstruct config: nil, bucket: nil, prefix: nil
   end
 
   defmodule StreamUpload do
+    @moduledoc """
+    Collectable stream for multipart uploads into S3-compatible storage.
+    """
+
+    @type t :: %__MODULE__{
+            config: Config.t(),
+            path: String.t(),
+            opts: keyword()
+          }
+
     @enforce_keys [:config, :path]
     defstruct config: nil, path: nil, opts: []
 

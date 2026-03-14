@@ -1,9 +1,15 @@
 defmodule Jido.VFS.RelativePath do
-  @moduledoc false
+  @moduledoc """
+  Utilities for validating and normalizing relative filesystem paths.
+  """
+
   @type t :: Path.t()
 
   @slash [?/, ?\\]
 
+  @doc """
+  Normalizes a relative path and rejects absolute or traversal paths.
+  """
   @spec normalize(binary) :: {:ok, t} | {:error, term}
   def normalize(path) do
     case relative?(path) do
@@ -25,6 +31,9 @@ defmodule Jido.VFS.RelativePath do
     end
   end
 
+  @doc """
+  Returns `true` when the given path is relative for Unix and Windows path formats.
+  """
   @spec relative?(binary) :: boolean
   def relative?(<<c1, c2, _::binary>>) when c1 in @slash and c2 in @slash,
     do: false
@@ -36,6 +45,9 @@ defmodule Jido.VFS.RelativePath do
   def relative?(<<slash, _::binary>>) when slash in @slash, do: false
   def relative?(path) when is_binary(path), do: true
 
+  @doc """
+  Expands `.` path segments and rejects parent traversal beyond the root.
+  """
   @spec expand(t) :: {:ok, t} | {:error, term}
   def expand(<<"../", _::binary>>), do: {:error, :traversal}
 
@@ -61,6 +73,9 @@ defmodule Jido.VFS.RelativePath do
   defp expand_dot([], []), do: ""
   defp expand_dot([], ["/" | acc]), do: IO.iodata_to_binary(:lists.reverse(acc))
 
+  @doc """
+  Joins a storage prefix with a normalized relative path, preserving a trailing slash.
+  """
   @spec join_prefix(Path.t(), t) :: Path.t()
   def join_prefix(prefix, path) do
     join = Path.join(prefix, path)
@@ -71,11 +86,18 @@ defmodule Jido.VFS.RelativePath do
     end
   end
 
+  @doc """
+  Removes a prefix from a fully-qualified storage path.
+  """
   @spec strip_prefix(Path.t(), t) :: Path.t()
   def strip_prefix(prefix, path) do
     Path.relative_to(path, prefix)
   end
 
+  @doc """
+  Ensures the given path represents a directory path ending in `/`.
+  """
+  @spec assert_directory(Path.t()) :: {:ok, Path.t()} | {:error, :enotdir}
   def assert_directory(path) do
     if String.ends_with?(path, "/") do
       {:ok, path}

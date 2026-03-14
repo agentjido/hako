@@ -25,6 +25,16 @@ defmodule Jido.VFS.Adapter.InMemory do
   alias Jido.VFS.Errors
 
   defmodule AgentStream do
+    @moduledoc """
+    Enumerable and collectable stream for chunked in-memory file access.
+    """
+
+    @type t :: %__MODULE__{
+            config: map() | nil,
+            path: String.t() | nil,
+            chunk_size: pos_integer()
+          }
+
     @enforce_keys [:config, :path]
     defstruct config: nil, path: nil, chunk_size: 1024
 
@@ -80,7 +90,14 @@ defmodule Jido.VFS.Adapter.InMemory do
   use Agent
 
   defmodule Config do
-    @moduledoc false
+    @moduledoc """
+    Runtime configuration for the in-memory adapter.
+    """
+
+    @type t :: %__MODULE__{
+            name: atom() | module() | pid() | term() | nil
+          }
+
     defstruct name: nil
   end
 

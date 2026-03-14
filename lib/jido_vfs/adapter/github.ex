@@ -75,7 +75,7 @@ defmodule Jido.VFS.Adapter.GitHub do
 
   defstruct [:owner, :repo, :ref, :client, :commit_info]
 
-  @type config :: %__MODULE__{
+  @type t :: %__MODULE__{
           owner: String.t(),
           repo: String.t(),
           ref: String.t(),
@@ -86,6 +86,8 @@ defmodule Jido.VFS.Adapter.GitHub do
             author: %{name: String.t(), email: String.t()}
           }
         }
+
+  @type config :: t()
 
   @doc """
   Configure the GitHub adapter.

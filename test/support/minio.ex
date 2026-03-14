@@ -5,6 +5,8 @@ defmodule JidoVfsTest.Minio do
     cur = Process.flag(:trap_exit, true)
 
     # Set environment variables for minio
+    System.delete_env("MINIO_ACCESS_KEY")
+    System.delete_env("MINIO_SECRET_KEY")
     System.put_env("MINIO_ROOT_USER", "minio_key")
     System.put_env("MINIO_ROOT_PASSWORD", "minio_secret")
     System.put_env("MINIO_BROWSER", "off")
@@ -50,21 +52,37 @@ defmodule JidoVfsTest.Minio do
 
   def wait_for_ready(timeout \\ 5000) do
     deadline = System.monotonic_time(:millisecond) + timeout
-    wait_for_ready_loop(deadline)
+    wait_for_ready_loop(deadline, Keyword.fetch!(config(), :host), Keyword.fetch!(config(), :port))
   end
 
-  defp wait_for_ready_loop(deadline) do
-    case ExAws.S3.list_buckets() |> ExAws.request(config()) do
-      {:ok, _} ->
-        :ok
+  defp wait_for_ready_loop(deadline, host, port) do
+    if System.monotonic_time(:millisecond) < deadline do
+      if port_open?(host, port) do
+        case ExAws.S3.list_buckets() |> ExAws.request(config()) do
+          {:ok, _} -> :ok
+          _ -> retry_wait_for_ready(deadline, host, port)
+        end
+      else
+        retry_wait_for_ready(deadline, host, port)
+      end
+    else
+      {:error, :timeout}
+    end
+  end
+
+  defp retry_wait_for_ready(deadline, host, port) do
+    Process.sleep(100)
+    wait_for_ready_loop(deadline, host, port)
+  end
+
+  defp port_open?(host, port) do
+    case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false], 100) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
 
       _ ->
-        if System.monotonic_time(:millisecond) < deadline do
-          Process.sleep(100)
-          wait_for_ready_loop(deadline)
-        else
-          {:error, :timeout}
-        end
+        false
     end
   end
 

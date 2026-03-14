@@ -17,6 +17,7 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
   Run with: mix test --include integration --include s3
   """
   use ExUnit.Case, async: false
+  use Mimic
 
   @moduletag :integration
   @moduletag :s3
@@ -44,6 +45,13 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
     end)
 
     {:ok, filesystem: filesystem, config: s3_config, raw_config: config, bucket: "default"}
+  end
+
+  setup :copy_download_module
+
+  defp copy_download_module(_context) do
+    Mimic.copy(ExAws.S3.Download)
+    :ok
   end
 
   # ============================================================================
@@ -516,7 +524,18 @@ defmodule Jido.VFS.Adapter.S3IntegrationTest do
     test "read stream surfaces chunk task failures as adapter errors", %{filesystem: fs} do
       content = :crypto.strong_rand_bytes(100_000)
       :ok = Jido.VFS.write(fs, "timeout_stream.bin", content)
-      {:ok, stream} = Jido.VFS.read_stream(fs, "timeout_stream.bin", timeout: 0)
+
+      expect(ExAws.S3.Download, :get_chunk, fn _op, _boundaries, _config ->
+        Process.sleep(10)
+        {0, content}
+      end)
+
+      {:ok, stream} =
+        Jido.VFS.read_stream(fs, "timeout_stream.bin",
+          chunk_size: 200_000,
+          max_concurrency: 1,
+          timeout: 0
+        )
 
       assert_raise Jido.VFS.Errors.AdapterError, fn ->
         Enum.to_list(stream)

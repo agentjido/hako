@@ -44,11 +44,30 @@ defmodule Jido.VFS.Adapter.ETS do
   @default_chunk_size 1024
 
   defmodule Config do
-    @moduledoc false
+    @moduledoc """
+    Runtime configuration for the ETS adapter.
+    """
+
+    @type t :: %__MODULE__{
+            name: atom() | module() | pid() | term(),
+            table: atom() | nil,
+            eternal: boolean(),
+            versions_table: atom() | nil
+          }
+
     defstruct name: nil, table: nil, eternal: false, versions_table: nil
   end
 
   defmodule ETSStream do
+    @moduledoc """
+    Collectable stream used to append chunks into the ETS adapter.
+    """
+
+    @type t :: %__MODULE__{
+            config: Config.t() | nil,
+            path: String.t() | nil
+          }
+
     defstruct [:config, :path]
 
     defimpl Collectable do

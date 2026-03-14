@@ -40,6 +40,7 @@ Welcome to the Jido.VFS contributor's guide! We're excited that you're intereste
    ```bash
    # Run the full quality check suite
    mix quality
+   mix release.ready
 
    # Or individual checks
    mix format                    # Format code

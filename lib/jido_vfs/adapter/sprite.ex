@@ -56,7 +56,9 @@ defmodule Jido.VFS.Adapter.Sprite do
   @required_commands ~w(base64 cat chmod cp find mkdir mv rm rmdir sh stat test)
 
   defmodule Config do
-    @moduledoc false
+    @moduledoc """
+    Runtime configuration for the Sprite adapter.
+    """
 
     @type encoding :: :base64 | :raw
 
@@ -80,7 +82,16 @@ defmodule Jido.VFS.Adapter.Sprite do
   end
 
   defmodule WriteStream do
-    @moduledoc false
+    @moduledoc """
+    Collectable stream used to buffer writes before sending them to a Sprite.
+    """
+
+    @type t :: %__MODULE__{
+            config: Config.t(),
+            path: String.t(),
+            opts: keyword()
+          }
+
     @enforce_keys [:config, :path]
     defstruct config: nil, path: nil, opts: []
 

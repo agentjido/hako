@@ -255,6 +255,7 @@ defmodule Jido.VFS do
       {:ok, %File.Stream{}} = LocalFileSystem.write_stream("test.txt")
 
   """
+  @spec write_stream(filesystem, Path.t(), keyword()) :: {:ok, Enumerable.t()} | {:error, term}
   def write_stream({adapter, config}, path, opts \\ []) do
     with {:ok, normalized_path} <- Jido.VFS.RelativePath.normalize(path) do
       normalize_adapter_call(fn -> adapter.write_stream(config, normalized_path, opts) end)
@@ -326,6 +327,7 @@ defmodule Jido.VFS do
       {:ok, %File.Stream{}} = LocalFileSystem.read_stream("test.txt")
 
   """
+  @spec read_stream(filesystem, Path.t(), keyword()) :: {:ok, Enumerable.t()} | {:error, term}
   def read_stream({adapter, config}, path, opts \\ []) do
     with {:ok, normalized_path} <- Jido.VFS.RelativePath.normalize(path) do
       normalize_adapter_call(fn -> adapter.read_stream(config, normalized_path, opts) end)
@@ -1272,6 +1274,7 @@ defmodule Jido.VFS do
 
   @doc false
   # Also used by the InMemory adapter and therefore not private
+  @spec chunk(binary(), pos_integer()) :: [binary()]
   def chunk("", _size), do: []
 
   def chunk(binary, size) when byte_size(binary) >= size do

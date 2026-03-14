@@ -1,11 +1,16 @@
 defmodule Jido.VFS.Adapter.Sprite.CommandTransport do
-  @moduledoc false
+  @moduledoc """
+  Helpers for executing and validating shell commands against a Sprite client.
+  """
 
   alias Jido.VFS.Errors
   alias Jido.VFS.Adapter.Sprite.Config
 
   @missing_marker "__JIDO_VFS_MISSING__"
 
+  @doc """
+  Executes a command through the configured Sprite client and normalizes the result.
+  """
   @spec execute(Config.t(), String.t(), [String.t()], keyword()) ::
           {:ok, {binary(), integer()}} | {:error, term()}
   def execute(%Config{} = config, command, args, opts \\ []) do
@@ -34,6 +39,9 @@ defmodule Jido.VFS.Adapter.Sprite.CommandTransport do
     end
   end
 
+  @doc """
+  Verifies that the configured Sprite environment exposes the required shell commands.
+  """
   @spec probe_required_commands(Config.t(), [String.t()] | term()) :: :ok | {:error, term()}
   def probe_required_commands(%Config{} = config, commands) when is_list(commands) do
     unique_commands =

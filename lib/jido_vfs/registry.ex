@@ -9,11 +9,13 @@ defmodule Jido.VFS.Registry do
   """
 
   @doc false
+  @spec child_spec(term()) :: Supervisor.child_spec()
   def child_spec(_) do
     Registry.child_spec(keys: :unique, name: __MODULE__)
   end
 
   @doc false
+  @spec via(module(), term()) :: {:via, Registry, {module(), {module(), term()}}}
   def via(adapter, name) do
     {:via, Registry, {__MODULE__, {adapter, name}}}
   end

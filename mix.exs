@@ -63,7 +63,6 @@ defmodule Jido.VFS.MixProject do
       # Runtime dependencies
       {:ex_aws, "~> 2.1"},
       {:ex_aws_s3, "~> 2.2"},
-      {:hackney, "~> 1.9"},
       {:sweet_xml, "~> 0.6"},
       {:jason, "~> 1.0"},
       {:eternal, "~> 1.2.2"},
@@ -99,7 +98,16 @@ defmodule Jido.VFS.MixProject do
         "format --check-formatted",
         "compile --warnings-as-errors",
         "credo --min-priority higher",
-        "dialyzer"
+        "dialyzer",
+        "doctor --raise"
+      ],
+      "release.ready": [
+        "deps.unlock --check-unused",
+        "quality",
+        "cmd env MIX_ENV=test mix coveralls --include integration",
+        "docs",
+        "cmd mix hex.audit",
+        "cmd mix hex.build"
       ]
     ]
   end
@@ -125,8 +133,10 @@ defmodule Jido.VFS.MixProject do
       source_ref: "v#{@version}",
       extras: [
         "README.md",
+        "LICENSE.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
+        "docs/jido-agent-integration.md",
         "docs/adapter-onboarding-checklist.md"
       ],
       groups_for_modules: [

@@ -31,6 +31,10 @@ defmodule Jido.VFS.Adapter.Git do
   alias Jido.VFS.Revision
 
   defmodule Config do
+    @moduledoc """
+    Runtime configuration for the Git adapter.
+    """
+
     @enforce_keys [:repo_path, :branch, :author_name, :author_email, :auto_commit?, :local_config]
     defstruct [
       :repo_path,
@@ -48,10 +52,14 @@ defmodule Jido.VFS.Adapter.Git do
             author_name: String.t(),
             author_email: String.t(),
             auto_commit?: boolean(),
-            local_config: Local.Config.t(),
+            local_config: map(),
             commit_message: (map() -> String.t())
           }
 
+    @doc """
+    Builds the default commit message for auto-generated Git commits.
+    """
+    @spec default_commit_message(%{operation: term(), path: term()}) :: String.t()
     def default_commit_message(%{operation: op, path: path}) do
       "Jido.VFS #{op} #{path} at #{DateTime.utc_now() |> DateTime.to_iso8601()}"
     end

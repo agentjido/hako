@@ -347,7 +347,7 @@ defmodule Jido.VFS.Adapter.Local do
     end
   end
 
-  def existing_directory(path) do
+  defp existing_directory(path) do
     if File.dir?(path), do: :ok, else: :missing
   end
 

@@ -340,6 +340,10 @@ end
 
 Full documentation is available at [HexDocs](https://hexdocs.pm/jido_vfs).
 
+Additional guides:
+
+- [Jido Agent Integration](docs/jido-agent-integration.md)
+
 ## Contributing
 
 Adapter authors should follow the
@@ -354,8 +358,12 @@ Apache-2.0 - see [LICENSE.md](LICENSE.md) for details.
 
 `jido_vfs` is the filesystem abstraction layer for Jido packages, with adapters for local and remote storage backends.
 
+For Jido agents, prefer wrapping `jido_vfs` with `Jido.Action` modules in a higher-level package or application rather than adding `jido_action` as a required dependency here. See the
+[Jido Agent Integration](docs/jido-agent-integration.md) guide.
+
 ## Testing Paths
 
 - Unit/adapter tests: `mix test`
 - Full quality gate: `mix quality`
+- Release preflight: `mix release.ready`
 - Optional flaky cases: `mix test --include flaky`

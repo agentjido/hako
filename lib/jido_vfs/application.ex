@@ -1,7 +1,14 @@
 defmodule Jido.VFS.Application do
-  @moduledoc false
+  @moduledoc """
+  OTP application entry point for Jido.VFS support processes.
+  """
+
   use Application
 
+  @doc """
+  Starts the supervision tree used by Jido.VFS.
+  """
+  @spec start(Application.start_type(), term()) :: Supervisor.on_start()
   def start(_type, _args) do
     children = [
       Jido.VFS.Registry

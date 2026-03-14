@@ -1,16 +1,27 @@
 defmodule Mix.Tasks.JidoVfs.Install.Docs do
-  @moduledoc false
+  @moduledoc """
+  Shared documentation strings for the `mix jido_vfs.install` task.
+  """
 
+  @doc """
+  Returns the short task description shown by Mix.
+  """
   @spec short_doc() :: String.t()
   def short_doc do
     "Install and configure Jido VFS for use in an application."
   end
 
+  @doc """
+  Returns the canonical task invocation example.
+  """
   @spec example() :: String.t()
   def example do
     "mix jido_vfs.install"
   end
 
+  @doc """
+  Returns the long-form task documentation shown in `mix help`.
+  """
   @spec long_doc() :: String.t()
   def long_doc do
     """
